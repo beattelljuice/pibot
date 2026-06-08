@@ -1,0 +1,25 @@
+{
+  "dc_motors": {
+    "left_motor": {
+      "enable": 12,
+      "direction": 13
+    },
+    "right_motor": {
+      "enable": 6,
+      "direction": 5
+    }
+  },
+  "stepper_motors": {
+    "stepper_1": {
+      "pins": [17, 18, 27, 22]
+    },
+    "stepper_2": {
+      "pins": [24, 25, 8, 7]
+    }
+  },
+  "api": {
+    "host": "0.0.0.0",
+    "port": 5000,
+    "debug": false
+  }
+}
