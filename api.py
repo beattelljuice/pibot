@@ -40,83 +40,61 @@ def create_api(motor_manager: MotorManager) -> Flask:
             return jsonify({"error": f"Motor '{name}' not found"}), 404
         return jsonify(motor.get_state())
 
+    @app.route("/motors/<name>/power", methods=["POST"])
+    def set_motor_power(name: str):
+        """Set DC motor power (-100 to 100). Positive=forward, Negative=backward, 0=stop."""
+        api_log(f"POST /motors/{name}/power - Request body: {request.get_json()}")
+        motor = motor_manager.get_motor(name)
+        if not motor:
+            api_log(f"✗ Motor '{name}' not found")
+            return jsonify({"error": f"Motor '{name}' not found"}), 404
+
+        if not isinstance(motor, DCMotor):
+            api_log(f"✗ Motor '{name}' is not a DC motor")
+            return jsonify({"error": f"'{name}' is not a DC motor"}), 400
+
+        data = request.get_json()
+        if "power" not in data:
+            api_log(f"✗ Missing 'power' parameter")
+            return jsonify({"error": "Missing 'power' parameter"}), 400
+
+        power = data["power"]
+        if not isinstance(power, (int, float)) or power < -100 or power > 100:
+            api_log(f"✗ Invalid power value: {power}")
+            return jsonify({"error": "Power must be -100 to 100"}), 400
+
+        api_log(f"Setting motor '{name}' power to {power}%")
+        motor.set_power(int(power))
+        api_log(f"✓ Power set successfully")
+        return jsonify({"status": "success", "motor": name, "power": motor.speed if motor.direction != "stopped" else 0, "direction": motor.direction})
+
     @app.route("/motors/<name>/speed", methods=["POST"])
-    def set_motor_speed(name: str):
-        """Set motor speed (DC: 0-100%, Stepper: RPM)."""
+    def set_stepper_speed(name: str):
+        """Set stepper motor speed in RPM."""
         api_log(f"POST /motors/{name}/speed - Request body: {request.get_json()}")
         motor = motor_manager.get_motor(name)
         if not motor:
             api_log(f"✗ Motor '{name}' not found")
             return jsonify({"error": f"Motor '{name}' not found"}), 404
 
-        data = request.get_json()
-
-        if isinstance(motor, DCMotor):
-            api_log(f"Motor '{name}' is DC motor")
-            if "speed" not in data:
-                api_log(f"✗ Missing 'speed' parameter")
-                return jsonify({"error": "Missing 'speed' parameter for DC motor"}), 400
-
-            speed = data["speed"]
-            if not isinstance(speed, (int, float)) or speed < 0 or speed > 100:
-                api_log(f"✗ Invalid speed value: {speed}")
-                return jsonify({"error": "Speed must be 0-100"}), 400
-
-            api_log(f"Setting DC motor '{name}' speed to {speed}%")
-            motor.set_speed(int(speed))
-            api_log(f"✓ Speed set successfully")
-            return jsonify({"status": "success", "motor": name, "speed": motor.speed})
-
-        elif isinstance(motor, StepperMotor):
-            api_log(f"Motor '{name}' is stepper motor")
-            if "rpm" not in data:
-                api_log(f"✗ Missing 'rpm' parameter")
-                return jsonify({"error": "Missing 'rpm' parameter for stepper motor"}), 400
-
-            rpm = data["rpm"]
-            if not isinstance(rpm, (int, float)) or rpm < 0:
-                api_log(f"✗ Invalid RPM value: {rpm}")
-                return jsonify({"error": "RPM must be non-negative"}), 400
-
-            api_log(f"Setting stepper motor '{name}' speed to {rpm} RPM")
-            motor.set_speed(float(rpm))
-            api_log(f"✓ RPM set successfully")
-            return jsonify({"status": "success", "motor": name, "rpm": rpm})
-
-        api_log(f"✗ Unknown motor type")
-        return jsonify({"error": "Unknown motor type"}), 400
-
-    @app.route("/motors/<name>/direction", methods=["POST"])
-    def set_direction(name: str):
-        """Set DC motor direction."""
-        api_log(f"POST /motors/{name}/direction - Request body: {request.get_json()}")
-        motor = motor_manager.get_motor(name)
-        if not motor:
-            api_log(f"✗ Motor '{name}' not found")
-            return jsonify({"error": f"Motor '{name}' not found"}), 404
-        if not isinstance(motor, DCMotor):
-            api_log(f"✗ Motor '{name}' is not a DC motor")
-            return jsonify({"error": f"'{name}' is not a DC motor"}), 400
+        if not isinstance(motor, StepperMotor):
+            api_log(f"✗ Motor '{name}' is not a stepper motor")
+            return jsonify({"error": f"'{name}' is not a stepper motor"}), 400
 
         data = request.get_json()
-        if "direction" not in data:
-            api_log(f"✗ Missing 'direction' parameter")
-            return jsonify({"error": "Missing 'direction' parameter"}), 400
+        if "rpm" not in data:
+            api_log(f"✗ Missing 'rpm' parameter")
+            return jsonify({"error": "Missing 'rpm' parameter for stepper motor"}), 400
 
-        direction = data["direction"].lower()
-        api_log(f"Setting direction to '{direction}'")
-        if direction == "forward":
-            motor.forward()
-        elif direction == "backward":
-            motor.backward()
-        else:
-            api_log(f"✗ Invalid direction: {direction}")
-            return jsonify({"error": "Direction must be 'forward' or 'backward'"}), 400
+        rpm = data["rpm"]
+        if not isinstance(rpm, (int, float)) or rpm < 0:
+            api_log(f"✗ Invalid RPM value: {rpm}")
+            return jsonify({"error": "RPM must be non-negative"}), 400
 
-        api_log(f"✓ Direction set successfully")
-        return jsonify(
-            {"status": "success", "motor": name, "direction": motor.direction}
-        )
+        api_log(f"Setting stepper motor '{name}' speed to {rpm} RPM")
+        motor.set_speed(float(rpm))
+        api_log(f"✓ RPM set successfully")
+        return jsonify({"status": "success", "motor": name, "rpm": rpm})
 
     @app.route("/motors/<name>/step", methods=["POST"])
     def step_motor(name: str):

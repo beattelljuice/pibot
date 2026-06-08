@@ -456,23 +456,23 @@
                     <div class="motor-type">DC Motor</div>
 
                     <div class="control-group">
-                        <label>Speed</label>
+                        <label>Power (-100 to 100)</label>
                         <div class="slider-container">
-                            <input type="range" min="0" max="100" value="${motor.speed || 0}"
-                                   class="motor-speed" data-motor="${name}">
-                            <div class="slider-value" id="speed-${name}">${motor.speed || 0}%</div>
+                            <input type="range" min="-100" max="100" value="0"
+                                   class="motor-power" data-motor="${name}">
+                            <div class="slider-value" id="power-${name}">0%</div>
                         </div>
                     </div>
 
                     <div class="button-group">
-                        <button class="btn btn-forward" onclick="controlMotor('${name}', 'direction', 'forward')">
-                            ➡️ Forward
+                        <button class="btn btn-forward" onclick="setMotorPower('${name}', 100)">
+                            ➡️ Full Forward
                         </button>
-                        <button class="btn btn-backward" onclick="controlMotor('${name}', 'direction', 'backward')">
-                            ⬅️ Backward
-                        </button>
-                        <button class="btn btn-stop" onclick="controlMotor('${name}', 'stop')">
+                        <button class="btn btn-stop" onclick="setMotorPower('${name}', 0)">
                             ⏹️ Stop
+                        </button>
+                        <button class="btn btn-backward" onclick="setMotorPower('${name}', -100)">
+                            ⬅️ Full Backward
                         </button>
                     </div>
 
@@ -481,14 +481,14 @@
                     </div>
                 `;
 
-                // Add speed slider listener
+                // Add power slider listener
                 setTimeout(() => {
-                    const slider = card.querySelector('.motor-speed');
+                    const slider = card.querySelector('.motor-power');
                     if (slider) {
                         slider.addEventListener('input', (e) => {
-                            const speed = e.target.value;
-                            document.getElementById(`speed-${name}`).textContent = speed + '%';
-                            controlMotor(name, 'speed', parseInt(speed));
+                            const power = e.target.value;
+                            updatePowerDisplay(name, parseInt(power));
+                            setMotorPower(name, parseInt(power));
                         });
                     }
                 }, 0);
@@ -548,6 +548,37 @@
             }
 
             return card;
+        }
+
+        async function setMotorPower(name, power) {
+            try {
+                const response = await fetch(`${apiHost}/motors/${name}/power`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ power })
+                });
+
+                if (!response.ok) throw new Error('API request failed');
+
+                updateMotorStatus();
+                clearError();
+            } catch (error) {
+                console.error('Error setting motor power:', error);
+                showError(`Failed to set motor power: ${error.message}`);
+            }
+        }
+
+        function updatePowerDisplay(name, power) {
+            const element = document.getElementById(`power-${name}`);
+            if (element) {
+                if (power > 0) {
+                    element.textContent = `${power}% →`;
+                } else if (power < 0) {
+                    element.textContent = `${-power}% ←`;
+                } else {
+                    element.textContent = 'Stop';
+                }
+            }
         }
 
         async function controlMotor(name, action, value, isStepper = false) {
@@ -624,7 +655,17 @@
                 Object.entries(updatedMotors).forEach(([name, motor]) => {
                     if (motor.type === 'DC') {
                         const dirElement = document.getElementById(`dir-${name}`);
+                        const powerElement = document.getElementById(`power-${name}`);
                         if (dirElement) dirElement.textContent = motor.direction;
+                        if (powerElement) {
+                            if (motor.direction === 'forward') {
+                                powerElement.textContent = `${motor.speed}% →`;
+                            } else if (motor.direction === 'backward') {
+                                powerElement.textContent = `${motor.speed}% ←`;
+                            } else {
+                                powerElement.textContent = 'Stop';
+                            }
+                        }
                     } else if (motor.type === 'Stepper') {
                         const steppingElement = document.getElementById(`stepping-${name}`);
                         if (steppingElement) {

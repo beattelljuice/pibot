@@ -45,23 +45,33 @@ class DCMotor:
         self.direction = "stopped"
         log(f"Initialized - speed={self.speed}%, direction={self.direction}", self.name)
 
-    def set_speed(self, speed: int) -> None:
-        """Set motor speed 0-100%."""
-        speed = max(0, min(100, speed))
-        log(f"set_speed() called with {speed}%", self.name)
-        self.speed = speed
+    def set_power(self, power: int) -> None:
+        """
+        Set motor power (-100 to 100).
+        Positive = forward, Negative = backward, 0 = stop
+        """
+        power = max(-100, min(100, power))
+        log(f"set_power() called with {power}%", self.name)
+        self.speed = abs(power)
 
         try:
-            if self.direction == "forward":
-                log(f"Applying speed {speed}% in forward direction: pin1={speed}%, pin2=0%", self.name)
-                self.pwm1.ChangeDutyCycle(speed)
+            if power > 0:
+                # Forward
+                self.direction = "forward"
+                log(f"Setting forward at {power}%: pin1={power}%, pin2=0%", self.name)
+                self.pwm1.ChangeDutyCycle(power)
                 self.pwm2.ChangeDutyCycle(0)
-            elif self.direction == "backward":
-                log(f"Applying speed {speed}% in backward direction: pin1=0%, pin2={speed}%", self.name)
+            elif power < 0:
+                # Backward
+                self.direction = "backward"
+                backward_power = abs(power)
+                log(f"Setting backward at {backward_power}%: pin1=0%, pin2={backward_power}%", self.name)
                 self.pwm1.ChangeDutyCycle(0)
-                self.pwm2.ChangeDutyCycle(speed)
-            elif self.direction == "stopped":
-                log(f"Motor stopped, setting both pins to 0%", self.name)
+                self.pwm2.ChangeDutyCycle(backward_power)
+            else:
+                # Stop
+                self.direction = "stopped"
+                log(f"Stopping motor: pin1=0%, pin2=0%", self.name)
                 self.pwm1.ChangeDutyCycle(0)
                 self.pwm2.ChangeDutyCycle(0)
         except RuntimeError as e:
@@ -73,34 +83,12 @@ class DCMotor:
             self.pwm1.start(0)
             self.pwm2.start(0)
             log(f"PWM reinitialized", self.name)
-            # Retry setting speed
-            self.set_speed(speed)
-
-    def forward(self) -> None:
-        """Set motor direction to forward."""
-        log(f"forward() called", self.name)
-        self.direction = "forward"
-        log(f"Direction set to forward, applying current speed {self.speed}%", self.name)
-        self.set_speed(self.speed)
-
-    def backward(self) -> None:
-        """Set motor direction to backward."""
-        log(f"backward() called", self.name)
-        self.direction = "backward"
-        log(f"Direction set to backward, applying current speed {self.speed}%", self.name)
-        self.set_speed(self.speed)
+            self.set_power(power)
 
     def stop(self) -> None:
         """Stop motor."""
-        log(f"stop() called, setting both pins to 0%", self.name)
-        self.speed = 0
-        self.direction = "stopped"
-        try:
-            self.pwm1.ChangeDutyCycle(0)
-            self.pwm2.ChangeDutyCycle(0)
-            log(f"Motor stopped - speed=0%, direction=stopped", self.name)
-        except RuntimeError as e:
-            log(f"Error stopping motor: {e}", self.name)
+        log(f"stop() called", self.name)
+        self.set_power(0)
 
     def get_state(self) -> dict:
         """Get current motor state."""
