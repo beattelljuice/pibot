@@ -6,6 +6,7 @@ from datetime import datetime
 from action_executor import ActionExecutor
 from api import create_api
 from config import Config
+from display_controller import DisplayController
 from gpio_controller import GPIOController
 from motor_manager import MotorManager
 from robot_state import RobotState
@@ -23,6 +24,7 @@ def main() -> None:
     manager = None
     executor = None
     robot_state = None
+    display = None
     cleanup_started = False
 
     def cleanup(signum=None, frame=None, exit_process: bool = False) -> None:
@@ -106,6 +108,23 @@ def main() -> None:
         robot_state = RobotState()
         main_log("Robot State initialized")
 
+        display_config = config.get_display_config()
+        main_log("Initializing OLED Display Controller...")
+        display = DisplayController(
+            enabled=display_config.get("enabled", False),
+            driver=display_config.get("driver", "sh1106"),
+            width=display_config.get("width", 128),
+            height=display_config.get("height", 64),
+            port=display_config.get("i2c_port", 1),
+            address=display_config.get("i2c_address", "0x3C"),
+            rotate=display_config.get("rotate", 0),
+        )
+        display_status = display.get_status()
+        if display_status["available"]:
+            main_log("OLED Display Controller initialized")
+        else:
+            main_log(f"OLED Display unavailable: {display_status['error']}")
+
         main_log("Initializing Action Executor...")
         executor = ActionExecutor(manager, robot_state=robot_state)
         main_log("Action Executor initialized")
@@ -122,7 +141,7 @@ def main() -> None:
         main_log("=" * 60)
         main_log("")
 
-        app = create_api(manager, executor, robot_state)
+        app = create_api(manager, executor, robot_state, display)
 
         signal.signal(signal.SIGINT, handle_signal)
         signal.signal(signal.SIGTERM, handle_signal)

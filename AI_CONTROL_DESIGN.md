@@ -201,10 +201,36 @@ Allowed action types:
 - `drive_tank`: set left and right DC motor power for a short duration.
 - `rotate`: turn in place for a short duration.
 - `arm_move`: move a named arm by a bounded number of steps.
+- `display_frame`: replace the OLED display with a full 128x64 1-bit frame.
+- `display_text`: write short text to the OLED display.
 - `speak`: say a short phrase through TTS.
 - `wait`: do nothing for a short duration.
 
 The runtime should reject anything else.
+
+## Display Control Note
+
+The SH1106 OLED is safe for broad AI control because display pixels cannot move the chassis or arms.
+
+Expose display control differently from motor control:
+
+- Allow complete pixel-frame writes.
+- Still validate frame shape and size.
+- Keep display writes in the robot state/action history.
+- Do not let malformed display payloads block safety or motor shutdown.
+
+The AI can eventually use:
+
+```json
+{
+  "type": "display_frame",
+  "rows": [
+    "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+  ]
+}
+```
+
+For actual use, `rows` must contain 64 strings, each exactly 128 characters. `1` means lit pixel and `0` means unlit pixel.
 
 ## Arm Control Note
 

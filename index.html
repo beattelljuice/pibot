@@ -488,6 +488,32 @@
             word-break: break-word;
         }
 
+        .display-canvas-wrap {
+            background: #111827;
+            border: 2px solid #495057;
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 10px;
+            overflow: auto;
+        }
+
+        .display-canvas {
+            width: 256px;
+            height: 128px;
+            background: #000;
+            image-rendering: pixelated;
+            display: block;
+            cursor: crosshair;
+            touch-action: none;
+        }
+
+        .display-tools {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
         @media (max-width: 600px) {
             .header h1 {
                 font-size: 1.8em;
@@ -521,6 +547,10 @@
             .runtime-header {
                 align-items: flex-start;
             }
+
+            .display-tools {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -551,6 +581,7 @@
                     <span class="status-chip" id="chip-estop">E-Stop: --</span>
                     <span class="status-chip" id="chip-action">Action: --</span>
                     <span class="status-chip" id="chip-sensors">Sensors: --</span>
+                    <span class="status-chip" id="chip-display">Display: --</span>
                 </div>
             </div>
 
@@ -667,6 +698,29 @@
                     </div>
                 </div>
 
+                <div class="runtime-card">
+                    <h3>OLED Display</h3>
+                    <label for="display-text">Text</label>
+                    <input type="text" id="display-text" value="PiBot online">
+                    <div class="runtime-actions">
+                        <button class="btn btn-primary" onclick="sendDisplayText()">Send Text</button>
+                        <button class="btn btn-stop" onclick="clearDisplay()">Clear OLED</button>
+                    </div>
+
+                    <label>Pixel Canvas</label>
+                    <div class="display-canvas-wrap">
+                        <canvas id="display-canvas" class="display-canvas" width="128" height="64"></canvas>
+                    </div>
+                    <div class="display-tools">
+                        <button class="btn btn-primary" onclick="setDisplayDrawMode(1)">Draw</button>
+                        <button class="btn btn-backward" onclick="setDisplayDrawMode(0)">Erase</button>
+                        <button class="btn btn-stop" onclick="clearDisplayCanvas()">Clear Canvas</button>
+                    </div>
+                    <div class="runtime-actions">
+                        <button class="btn btn-forward" onclick="sendDisplayFrame()">Send Pixels</button>
+                    </div>
+                </div>
+
                 <div class="runtime-card state-card">
                     <h3>Robot State</h3>
                     <pre class="state-json" id="robot-state-json">No state loaded.</pre>
@@ -687,9 +741,14 @@
         let apiHost = 'http://localhost:5000';
         let motors = {};
         let robotState = null;
+        let displayDrawMode = 1;
+        let displayDrawing = false;
+        let displayCanvas = null;
+        let displayCtx = null;
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
+            setupDisplayCanvas();
             loadMotors();
             refreshRobotState();
             setInterval(updateMotorStatus, 2000);
@@ -794,12 +853,14 @@
             const estopChip = document.getElementById('chip-estop');
             const actionChip = document.getElementById('chip-action');
             const sensorsChip = document.getElementById('chip-sensors');
+            const displayChip = document.getElementById('chip-display');
 
             if (!state || !state.robot) {
                 setChip(modeChip, 'Mode: --');
                 setChip(estopChip, 'E-Stop: --');
                 setChip(actionChip, 'Action: --');
                 setChip(sensorsChip, 'Sensors: --');
+                setChip(displayChip, 'Display: --');
                 return;
             }
 
@@ -807,11 +868,17 @@
             const estop = Boolean(state.robot.emergency_stop);
             const activeAction = state.robot.executor && state.robot.executor.active_action;
             const sensorCount = state.sensors ? Object.keys(state.sensors).length : 0;
+            const display = state.robot.display;
 
             setChip(modeChip, `Mode: ${mode}`, mode === 'ai' ? 'warn' : mode === 'estop' ? 'danger' : 'good');
             setChip(estopChip, `E-Stop: ${estop ? 'Active' : 'Clear'}`, estop ? 'danger' : 'good');
             setChip(actionChip, `Action: ${activeAction ? activeAction.type : 'Idle'}`, activeAction ? 'warn' : 'good');
             setChip(sensorsChip, `Sensors: ${sensorCount}`, sensorCount > 0 ? 'good' : '');
+            setChip(
+                displayChip,
+                `Display: ${display && display.available ? 'Ready' : 'Unavailable'}`,
+                display && display.available ? 'good' : 'warn'
+            );
         }
 
         function setChip(element, text, tone = '') {
@@ -1045,6 +1112,117 @@
             } catch (error) {
                 console.error('Error moving stepper:', error);
                 showError(`Failed to move stepper: ${error.message}`);
+            }
+        }
+
+        function setupDisplayCanvas() {
+            displayCanvas = document.getElementById('display-canvas');
+            if (!displayCanvas) return;
+
+            displayCtx = displayCanvas.getContext('2d', { willReadFrequently: true });
+            displayCtx.imageSmoothingEnabled = false;
+            clearDisplayCanvas();
+
+            displayCanvas.addEventListener('pointerdown', (event) => {
+                displayDrawing = true;
+                drawDisplayPixel(event);
+            });
+            displayCanvas.addEventListener('pointermove', (event) => {
+                if (displayDrawing) drawDisplayPixel(event);
+            });
+            window.addEventListener('pointerup', () => {
+                displayDrawing = false;
+            });
+            displayCanvas.addEventListener('pointerleave', () => {
+                displayDrawing = false;
+            });
+        }
+
+        function setDisplayDrawMode(mode) {
+            displayDrawMode = mode ? 1 : 0;
+        }
+
+        function drawDisplayPixel(event) {
+            if (!displayCanvas || !displayCtx) return;
+
+            const rect = displayCanvas.getBoundingClientRect();
+            const scaleX = displayCanvas.width / rect.width;
+            const scaleY = displayCanvas.height / rect.height;
+            const x = Math.floor((event.clientX - rect.left) * scaleX);
+            const y = Math.floor((event.clientY - rect.top) * scaleY);
+
+            if (x < 0 || y < 0 || x >= displayCanvas.width || y >= displayCanvas.height) {
+                return;
+            }
+
+            displayCtx.fillStyle = displayDrawMode ? '#ffffff' : '#000000';
+            displayCtx.fillRect(x, y, 1, 1);
+        }
+
+        function clearDisplayCanvas() {
+            if (!displayCtx && displayCanvas) {
+                displayCtx = displayCanvas.getContext('2d', { willReadFrequently: true });
+            }
+            if (!displayCanvas || !displayCtx) return;
+
+            displayCtx.fillStyle = '#000000';
+            displayCtx.fillRect(0, 0, displayCanvas.width, displayCanvas.height);
+        }
+
+        function canvasToRows() {
+            if (!displayCanvas || !displayCtx) return [];
+
+            const image = displayCtx.getImageData(0, 0, displayCanvas.width, displayCanvas.height);
+            const rows = [];
+
+            for (let y = 0; y < displayCanvas.height; y += 1) {
+                let row = '';
+                for (let x = 0; x < displayCanvas.width; x += 1) {
+                    const index = (y * displayCanvas.width + x) * 4;
+                    const brightness = image.data[index] + image.data[index + 1] + image.data[index + 2];
+                    row += brightness > 0 ? '1' : '0';
+                }
+                rows.push(row);
+            }
+
+            return rows;
+        }
+
+        async function sendDisplayText() {
+            const text = document.getElementById('display-text').value;
+            try {
+                await apiRequest('/display/text', {
+                    method: 'POST',
+                    body: JSON.stringify({ text, x: 0, y: 0, clear: true })
+                });
+                await refreshRobotState();
+            } catch (error) {
+                console.error('Error sending display text:', error);
+                showError(`Failed to send display text: ${error.message}`);
+            }
+        }
+
+        async function clearDisplay() {
+            try {
+                await apiRequest('/display/clear', { method: 'POST' });
+                clearDisplayCanvas();
+                await refreshRobotState();
+            } catch (error) {
+                console.error('Error clearing display:', error);
+                showError(`Failed to clear display: ${error.message}`);
+            }
+        }
+
+        async function sendDisplayFrame() {
+            try {
+                await apiRequest('/display/frame', {
+                    method: 'POST',
+                    body: JSON.stringify({ rows: canvasToRows() })
+                });
+                await refreshRobotState();
+            } catch (error) {
+                console.error('Error sending display frame:', error);
+                showError(`Failed to send display pixels: ${error.message}`);
             }
         }
 

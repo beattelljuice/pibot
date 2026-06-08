@@ -35,3 +35,18 @@ class Config:
     def get_api_config(self) -> Dict[str, Any]:
         """Get API server configuration."""
         return self.data.get("api", {"host": "0.0.0.0", "port": 5000, "debug": False})
+
+    def get_display_config(self) -> Dict[str, Any]:
+        """Get OLED display configuration."""
+        return self.data.get(
+            "display",
+            {
+                "enabled": False,
+                "driver": "sh1106",
+                "width": 128,
+                "height": 64,
+                "i2c_port": 1,
+                "i2c_address": "0x3C",
+                "rotate": 0,
+            },
+        )

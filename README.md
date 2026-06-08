@@ -45,6 +45,60 @@ The browser UI includes both the manual motor controller and a Robot Runtime Tes
 - Timed drive and rotate actions
 - Fake or real sensor updates
 - Low-level stepper action tests
+- SH1106 OLED text and pixel-frame tests
+
+## SH1106 OLED Wiring
+
+For a Blue 1.3 Inch OLED Display I2C 128x64 SH1106 module, use the Raspberry Pi I2C1 pins:
+
+| OLED pin | Raspberry Pi pin |
+| --- | --- |
+| VCC | 3.3V, physical pin 1 |
+| GND | Ground, physical pin 6 |
+| SDA | GPIO2 / SDA1, physical pin 3 |
+| SCL | GPIO3 / SCL1, physical pin 5 |
+
+Use 3.3V for VCC unless your exact module documentation says otherwise. Some OLED boards accept 5V power, but the Raspberry Pi I2C pins are 3.3V logic.
+
+Enable I2C on the Pi:
+
+```bash
+sudo raspi-config
+```
+
+Go to `Interface Options` -> `I2C` -> `Yes`, then reboot if prompted.
+
+Install tools and verify the display address:
+
+```bash
+sudo apt install -y i2c-tools
+i2cdetect -y 1
+```
+
+Most SH1106 I2C OLED modules appear at `0x3C`. If yours appears at `0x3D`, edit `config.json`:
+
+```json
+"display": {
+  "enabled": true,
+  "driver": "sh1106",
+  "width": 128,
+  "height": 64,
+  "i2c_port": 1,
+  "i2c_address": "0x3C",
+  "rotate": 0
+}
+```
+
+The OLED is exposed through:
+
+```text
+GET  /display/status
+POST /display/clear
+POST /display/text
+POST /display/frame
+```
+
+`/display/frame` accepts full 128x64 pixel control using `rows`, where each row is a 128-character string of `0` and `1`.
 
 ## Features
 

@@ -1,3 +1,5 @@
 RPi.GPIO
 Flask
 Werkzeug
+luma.oled
+Pillow

@@ -21,5 +21,14 @@
     "host": "0.0.0.0",
     "port": 5000,
     "debug": false
+  },
+  "display": {
+    "enabled": true,
+    "driver": "sh1106",
+    "width": 128,
+    "height": 64,
+    "i2c_port": 1,
+    "i2c_address": "0x3C",
+    "rotate": 0
   }
 }

@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request, send_file
 from action_executor import ActionExecutor, ActionExecutorError
+from display_controller import DisplayController, DisplayControllerError
 from motor import DCMotor, StepperMotor
 from motor_manager import MotorManager
 from robot_state import RobotState, RobotStateError
@@ -16,6 +17,7 @@ def create_api(
     motor_manager: MotorManager,
     action_executor: ActionExecutor | None = None,
     robot_state: RobotState | None = None,
+    display_controller: DisplayController | None = None,
 ) -> Flask:
     """Create Flask API application."""
     app = Flask(__name__, static_folder='.', static_url_path='')
@@ -27,6 +29,8 @@ def create_api(
         action_executor = ActionExecutor(motor_manager, robot_state=robot_state)
     elif action_executor.robot_state is None:
         action_executor.robot_state = robot_state
+    if display_controller is None:
+        display_controller = DisplayController(enabled=False)
     api_log("Creating Flask API application")
 
     def get_json_body() -> dict:
@@ -44,10 +48,17 @@ def create_api(
             api_log(f"State action record failed: {e}")
 
     def get_robot_snapshot() -> dict:
-        return robot_state.snapshot(
+        snapshot = robot_state.snapshot(
             motor_states=motor_manager.list_motors(),
             action_status=action_executor.get_status(),
         )
+        snapshot["robot"]["display"] = display_controller.get_status()
+        return snapshot
+
+    def display_error_response(error: DisplayControllerError):
+        status_code = 503 if not display_controller.available else 400
+        api_log(f"Display error: {error}")
+        return jsonify({"error": str(error), "display": display_controller.get_status()}), status_code
 
     @app.route('/')
     def serve_ui():
@@ -153,6 +164,72 @@ def create_api(
             return jsonify(robot_state.clear_sensor(name))
         except RobotStateError as e:
             api_log(f"State error: {e}")
+            return jsonify({"error": str(e)}), 400
+
+    @app.route("/display/status", methods=["GET"])
+    def get_display_status():
+        """Get OLED display status."""
+        api_log("GET /display/status - Getting display status")
+        return jsonify(display_controller.get_status())
+
+    @app.route("/display/clear", methods=["POST"])
+    def clear_display():
+        """Clear the OLED display."""
+        api_log("POST /display/clear - Clearing display")
+        try:
+            result = display_controller.clear()
+            record_api_action({"type": "display_clear"})
+            return jsonify(result)
+        except DisplayControllerError as e:
+            return display_error_response(e)
+
+    @app.route("/display/text", methods=["POST"])
+    def display_text():
+        """Render text on the OLED display."""
+        api_log(f"POST /display/text - Request body: {request.get_json(silent=True)}")
+        try:
+            data = get_json_body()
+            result = display_controller.display_text(
+                data.get("text", ""),
+                data.get("x", 0),
+                data.get("y", 0),
+                data.get("clear", True),
+            )
+            record_api_action(
+                {
+                    "type": "display_text",
+                    "text": data.get("text", ""),
+                    "x": data.get("x", 0),
+                    "y": data.get("y", 0),
+                }
+            )
+            return jsonify(result)
+        except (ActionExecutorError, DisplayControllerError) as e:
+            if isinstance(e, DisplayControllerError):
+                return display_error_response(e)
+            return jsonify({"error": str(e)}), 400
+
+    @app.route("/display/frame", methods=["POST"])
+    def display_frame():
+        """Render a complete 128x64 1-bit frame on the OLED display."""
+        data = request.get_json(silent=True)
+        frame_keys = list(data.keys()) if isinstance(data, dict) else []
+        api_log(f"POST /display/frame - Frame keys: {frame_keys}")
+        try:
+            data = get_json_body()
+            result = display_controller.display_frame(data)
+            record_api_action(
+                {
+                    "type": "display_frame",
+                    "format": result["display"]["last_action"]["details"].get("format"),
+                    "width": result["display"]["width"],
+                    "height": result["display"]["height"],
+                }
+            )
+            return jsonify(result)
+        except (ActionExecutorError, DisplayControllerError) as e:
+            if isinstance(e, DisplayControllerError):
+                return display_error_response(e)
             return jsonify({"error": str(e)}), 400
 
     @app.route("/motors", methods=["GET"])
