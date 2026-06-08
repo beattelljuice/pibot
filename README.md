@@ -37,6 +37,15 @@ python3 main.py
 
 Open your browser to `http://localhost:5000` and you'll see the motor controller interface.
 
+The browser UI includes both the manual motor controller and a Robot Runtime Tester for:
+
+- Robot state/status
+- Goal and mode changes
+- Emergency stop and clear
+- Timed drive and rotate actions
+- Fake or real sensor updates
+- Low-level stepper action tests
+
 ## Features
 
 ### Web Interface

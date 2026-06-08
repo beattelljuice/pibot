@@ -344,6 +344,150 @@
             display: block;
         }
 
+        .runtime-panel {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+        }
+
+        .runtime-header {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            align-items: center;
+            margin-bottom: 18px;
+            flex-wrap: wrap;
+        }
+
+        .runtime-header h2 {
+            color: #667eea;
+            font-size: 1.45em;
+        }
+
+        .runtime-status {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .status-chip {
+            background: #f1f3f5;
+            color: #495057;
+            border: 1px solid #dee2e6;
+            border-radius: 999px;
+            padding: 6px 10px;
+            font-size: 0.82em;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .status-chip.good {
+            background: #ebfbee;
+            color: #2b8a3e;
+            border-color: #b2f2bb;
+        }
+
+        .status-chip.warn {
+            background: #fff4e6;
+            color: #e67700;
+            border-color: #ffd8a8;
+        }
+
+        .status-chip.danger {
+            background: #fff5f5;
+            color: #c92a2a;
+            border-color: #ffc9c9;
+        }
+
+        .runtime-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 16px;
+        }
+
+        .runtime-card {
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 16px;
+        }
+
+        .runtime-card h3 {
+            color: #667eea;
+            font-size: 1.05em;
+            margin-bottom: 12px;
+        }
+
+        .runtime-card label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 600;
+            color: #555;
+            font-size: 0.9em;
+        }
+
+        .runtime-card input,
+        .runtime-card select,
+        .runtime-card textarea {
+            width: 100%;
+            padding: 9px 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 0.95em;
+            margin-bottom: 10px;
+            transition: border-color 0.3s;
+            font-family: inherit;
+        }
+
+        .runtime-card input:focus,
+        .runtime-card select:focus,
+        .runtime-card textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .runtime-card textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .runtime-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .runtime-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .runtime-actions .btn {
+            flex: 1 1 120px;
+        }
+
+        .state-card {
+            grid-column: 1 / -1;
+        }
+
+        .state-json {
+            background: #212529;
+            color: #f8f9fa;
+            border-radius: 8px;
+            padding: 14px;
+            min-height: 220px;
+            max-height: 420px;
+            overflow: auto;
+            font-family: Consolas, Monaco, 'Courier New', monospace;
+            font-size: 0.86em;
+            line-height: 1.45;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
         @media (max-width: 600px) {
             .header h1 {
                 font-size: 1.8em;
@@ -369,6 +513,14 @@
             .button-group {
                 flex-direction: column;
             }
+
+            .runtime-row {
+                grid-template-columns: 1fr;
+            }
+
+            .runtime-header {
+                align-items: flex-start;
+            }
         }
     </style>
 </head>
@@ -391,6 +543,137 @@
 
         <div class="error-message" id="error-message"></div>
 
+        <section class="runtime-panel">
+            <div class="runtime-header">
+                <h2>Robot Runtime Tester</h2>
+                <div class="runtime-status">
+                    <span class="status-chip" id="chip-mode">Mode: --</span>
+                    <span class="status-chip" id="chip-estop">E-Stop: --</span>
+                    <span class="status-chip" id="chip-action">Action: --</span>
+                    <span class="status-chip" id="chip-sensors">Sensors: --</span>
+                </div>
+            </div>
+
+            <div class="runtime-grid">
+                <div class="runtime-card">
+                    <h3>Goal</h3>
+                    <label for="runtime-goal">Operator Goal</label>
+                    <textarea id="runtime-goal" placeholder="explore slowly and avoid obstacles"></textarea>
+                    <div class="runtime-actions">
+                        <button class="btn btn-primary" onclick="setRobotGoal()">Set Goal</button>
+                        <button class="btn btn-primary" onclick="refreshRobotState()">Refresh State</button>
+                    </div>
+                </div>
+
+                <div class="runtime-card">
+                    <h3>Mode</h3>
+                    <label for="runtime-mode">Control Mode</label>
+                    <select id="runtime-mode">
+                        <option value="manual">Manual</option>
+                        <option value="paused">Paused</option>
+                        <option value="ai">AI</option>
+                        <option value="estop">E-Stop</option>
+                    </select>
+                    <div class="runtime-actions">
+                        <button class="btn btn-primary" onclick="setRobotMode()">Set Mode</button>
+                        <button class="btn btn-stop" onclick="activateEstop()">E-Stop</button>
+                        <button class="btn btn-backward" onclick="clearEstop()">Clear</button>
+                    </div>
+                </div>
+
+                <div class="runtime-card">
+                    <h3>Timed Drive</h3>
+                    <div class="runtime-row">
+                        <div>
+                            <label for="drive-left">Left Power</label>
+                            <input type="number" id="drive-left" value="25" min="-100" max="100">
+                        </div>
+                        <div>
+                            <label for="drive-right">Right Power</label>
+                            <input type="number" id="drive-right" value="25" min="-100" max="100">
+                        </div>
+                    </div>
+                    <label for="drive-duration">Duration ms</label>
+                    <input type="number" id="drive-duration" value="300" min="1">
+                    <div class="runtime-actions">
+                        <button class="btn btn-forward" onclick="driveTankAction()">Drive</button>
+                        <button class="btn btn-stop" onclick="stopAllActions()">Stop All</button>
+                    </div>
+                </div>
+
+                <div class="runtime-card">
+                    <h3>Rotate</h3>
+                    <div class="runtime-row">
+                        <div>
+                            <label for="rotate-power">Power</label>
+                            <input type="number" id="rotate-power" value="25" min="1" max="100">
+                        </div>
+                        <div>
+                            <label for="rotate-direction">Direction</label>
+                            <select id="rotate-direction">
+                                <option value="left">Left</option>
+                                <option value="right">Right</option>
+                                <option value="counterclockwise">Counterclockwise</option>
+                                <option value="clockwise">Clockwise</option>
+                            </select>
+                        </div>
+                    </div>
+                    <label for="rotate-duration">Duration ms</label>
+                    <input type="number" id="rotate-duration" value="300" min="1">
+                    <div class="runtime-actions">
+                        <button class="btn btn-primary" onclick="rotateAction()">Rotate</button>
+                    </div>
+                </div>
+
+                <div class="runtime-card">
+                    <h3>Sensor</h3>
+                    <div class="runtime-row">
+                        <div>
+                            <label for="sensor-name">Name</label>
+                            <input type="text" id="sensor-name" value="front_distance_cm">
+                        </div>
+                        <div>
+                            <label for="sensor-value">Value</label>
+                            <input type="text" id="sensor-value" value="85">
+                        </div>
+                    </div>
+                    <label for="sensor-stale">Stale After ms</label>
+                    <input type="number" id="sensor-stale" value="500" min="1">
+                    <div class="runtime-actions">
+                        <button class="btn btn-primary" onclick="updateSensor()">Update Sensor</button>
+                        <button class="btn btn-stop" onclick="clearSensor()">Clear Sensor</button>
+                    </div>
+                </div>
+
+                <div class="runtime-card">
+                    <h3>Stepper Action</h3>
+                    <label for="action-stepper-motor">Motor</label>
+                    <select id="action-stepper-motor"></select>
+                    <div class="runtime-row">
+                        <div>
+                            <label for="action-stepper-steps">Steps</label>
+                            <input type="number" id="action-stepper-steps" value="80" min="1">
+                        </div>
+                        <div>
+                            <label for="action-stepper-direction">Direction</label>
+                            <select id="action-stepper-direction">
+                                <option value="forward">Forward</option>
+                                <option value="backward">Backward</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="runtime-actions">
+                        <button class="btn btn-primary" onclick="stepperMoveAction()">Move Stepper</button>
+                    </div>
+                </div>
+
+                <div class="runtime-card state-card">
+                    <h3>Robot State</h3>
+                    <pre class="state-json" id="robot-state-json">No state loaded.</pre>
+                </div>
+            </div>
+        </section>
+
         <div class="motors-grid" id="motors-container">
             <p style="color: white; grid-column: 1 / -1; text-align: center;">Loading motors...</p>
         </div>
@@ -403,11 +686,14 @@
     <script>
         let apiHost = 'http://localhost:5000';
         let motors = {};
+        let robotState = null;
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
             loadMotors();
+            refreshRobotState();
             setInterval(updateMotorStatus, 2000);
+            setInterval(refreshRobotState, 2000);
         });
 
         function updateApiConfig() {
@@ -418,6 +704,7 @@
             }
             apiHost = `http://${host}`;
             loadMotors();
+            refreshRobotState();
         }
 
         async function loadMotors() {
@@ -427,6 +714,7 @@
 
                 motors = await response.json();
                 renderMotors();
+                populateStepperActionOptions();
                 updateConnectionStatus(true);
                 clearError();
             } catch (error) {
@@ -444,6 +732,320 @@
                 const card = createMotorCard(name, motor);
                 container.appendChild(card);
             });
+        }
+
+        async function apiRequest(path, options = {}) {
+            const response = await fetch(`${apiHost}${path}`, {
+                ...options,
+                headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
+            });
+
+            let payload = null;
+            try {
+                payload = await response.json();
+            } catch (error) {
+                payload = null;
+            }
+
+            if (!response.ok) {
+                const message = payload && payload.error ? payload.error : `HTTP ${response.status}`;
+                throw new Error(message);
+            }
+
+            return payload;
+        }
+
+        async function refreshRobotState() {
+            try {
+                robotState = await apiRequest('/robot/state');
+                renderRobotState();
+                updateConnectionStatus(true);
+                clearError();
+            } catch (error) {
+                console.error('Error refreshing robot state:', error);
+                updateConnectionStatus(false);
+                updateRuntimeChips(null);
+            }
+        }
+
+        function renderRobotState() {
+            const stateOutput = document.getElementById('robot-state-json');
+            if (stateOutput) {
+                stateOutput.textContent = JSON.stringify(robotState, null, 2);
+            }
+
+            if (robotState && robotState.robot) {
+                const goalInput = document.getElementById('runtime-goal');
+                if (goalInput && !goalInput.matches(':focus')) {
+                    goalInput.value = robotState.robot.operator_goal || '';
+                }
+
+                const modeSelect = document.getElementById('runtime-mode');
+                if (modeSelect && !modeSelect.matches(':focus')) {
+                    modeSelect.value = robotState.robot.mode || 'manual';
+                }
+            }
+
+            updateRuntimeChips(robotState);
+        }
+
+        function updateRuntimeChips(state) {
+            const modeChip = document.getElementById('chip-mode');
+            const estopChip = document.getElementById('chip-estop');
+            const actionChip = document.getElementById('chip-action');
+            const sensorsChip = document.getElementById('chip-sensors');
+
+            if (!state || !state.robot) {
+                setChip(modeChip, 'Mode: --');
+                setChip(estopChip, 'E-Stop: --');
+                setChip(actionChip, 'Action: --');
+                setChip(sensorsChip, 'Sensors: --');
+                return;
+            }
+
+            const mode = state.robot.mode || '--';
+            const estop = Boolean(state.robot.emergency_stop);
+            const activeAction = state.robot.executor && state.robot.executor.active_action;
+            const sensorCount = state.sensors ? Object.keys(state.sensors).length : 0;
+
+            setChip(modeChip, `Mode: ${mode}`, mode === 'ai' ? 'warn' : mode === 'estop' ? 'danger' : 'good');
+            setChip(estopChip, `E-Stop: ${estop ? 'Active' : 'Clear'}`, estop ? 'danger' : 'good');
+            setChip(actionChip, `Action: ${activeAction ? activeAction.type : 'Idle'}`, activeAction ? 'warn' : 'good');
+            setChip(sensorsChip, `Sensors: ${sensorCount}`, sensorCount > 0 ? 'good' : '');
+        }
+
+        function setChip(element, text, tone = '') {
+            if (!element) return;
+            element.textContent = text;
+            element.className = `status-chip ${tone}`.trim();
+        }
+
+        function populateStepperActionOptions() {
+            const select = document.getElementById('action-stepper-motor');
+            if (!select) return;
+
+            const currentValue = select.value;
+            const steppers = Object.entries(motors)
+                .filter(([, motor]) => motor.type === 'Stepper')
+                .map(([name]) => name);
+
+            select.innerHTML = '';
+
+            if (steppers.length === 0) {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = 'No stepper motors';
+                select.appendChild(option);
+                return;
+            }
+
+            steppers.forEach((name) => {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                select.appendChild(option);
+            });
+
+            if (steppers.includes(currentValue)) {
+                select.value = currentValue;
+            }
+        }
+
+        function getNumberInput(id, fallback = 0) {
+            const element = document.getElementById(id);
+            const value = Number(element ? element.value : fallback);
+            return Number.isFinite(value) ? value : fallback;
+        }
+
+        function parseSensorValue(rawValue) {
+            if (rawValue === 'true') return true;
+            if (rawValue === 'false') return false;
+            if (rawValue === 'null') return null;
+
+            const numberValue = Number(rawValue);
+            if (rawValue.trim() !== '' && Number.isFinite(numberValue)) {
+                return numberValue;
+            }
+
+            try {
+                return JSON.parse(rawValue);
+            } catch (error) {
+                return rawValue;
+            }
+        }
+
+        async function setRobotGoal() {
+            const goal = document.getElementById('runtime-goal').value;
+            try {
+                await apiRequest('/robot/goal', {
+                    method: 'POST',
+                    body: JSON.stringify({ goal })
+                });
+                await refreshRobotState();
+            } catch (error) {
+                console.error('Error setting goal:', error);
+                showError(`Failed to set goal: ${error.message}`);
+            }
+        }
+
+        async function setRobotMode() {
+            const mode = document.getElementById('runtime-mode').value;
+            try {
+                await apiRequest('/robot/mode', {
+                    method: 'POST',
+                    body: JSON.stringify({ mode })
+                });
+                await refreshRobotState();
+                await updateMotorStatus();
+            } catch (error) {
+                console.error('Error setting mode:', error);
+                showError(`Failed to set mode: ${error.message}`);
+            }
+        }
+
+        async function activateEstop() {
+            try {
+                await apiRequest('/robot/estop', {
+                    method: 'POST',
+                    body: JSON.stringify({ reason: 'runtime tester' })
+                });
+                await refreshRobotState();
+                await updateMotorStatus();
+            } catch (error) {
+                console.error('Error activating emergency stop:', error);
+                showError(`Failed to activate emergency stop: ${error.message}`);
+            }
+        }
+
+        async function clearEstop() {
+            try {
+                await apiRequest('/robot/estop/clear', { method: 'POST' });
+                await refreshRobotState();
+            } catch (error) {
+                console.error('Error clearing emergency stop:', error);
+                showError(`Failed to clear emergency stop: ${error.message}`);
+            }
+        }
+
+        async function driveTankAction() {
+            const leftPower = getNumberInput('drive-left');
+            const rightPower = getNumberInput('drive-right');
+            const durationMs = getNumberInput('drive-duration', 300);
+
+            try {
+                await apiRequest('/actions/drive_tank', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        left_power: leftPower,
+                        right_power: rightPower,
+                        duration_ms: durationMs
+                    })
+                });
+                await refreshRobotState();
+                await updateMotorStatus();
+            } catch (error) {
+                console.error('Error driving tank:', error);
+                showError(`Failed to drive chassis: ${error.message}`);
+            }
+        }
+
+        async function rotateAction() {
+            const power = getNumberInput('rotate-power', 25);
+            const durationMs = getNumberInput('rotate-duration', 300);
+            const direction = document.getElementById('rotate-direction').value;
+
+            try {
+                await apiRequest('/actions/rotate', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        power,
+                        direction,
+                        duration_ms: durationMs
+                    })
+                });
+                await refreshRobotState();
+                await updateMotorStatus();
+            } catch (error) {
+                console.error('Error rotating:', error);
+                showError(`Failed to rotate chassis: ${error.message}`);
+            }
+        }
+
+        async function stopAllActions() {
+            try {
+                await apiRequest('/actions/stop_all', { method: 'POST' });
+                await refreshRobotState();
+                await updateMotorStatus();
+            } catch (error) {
+                console.error('Error stopping all:', error);
+                showError(`Failed to stop all motors: ${error.message}`);
+            }
+        }
+
+        async function updateSensor() {
+            const name = document.getElementById('sensor-name').value.trim();
+            const rawValue = document.getElementById('sensor-value').value;
+            const staleAfterMs = getNumberInput('sensor-stale', 500);
+
+            if (!name) {
+                showError('Sensor name is required');
+                return;
+            }
+
+            try {
+                await apiRequest(`/robot/sensors/${encodeURIComponent(name)}`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        value: parseSensorValue(rawValue),
+                        stale_after_ms: staleAfterMs
+                    })
+                });
+                await refreshRobotState();
+            } catch (error) {
+                console.error('Error updating sensor:', error);
+                showError(`Failed to update sensor: ${error.message}`);
+            }
+        }
+
+        async function clearSensor() {
+            const name = document.getElementById('sensor-name').value.trim();
+            if (!name) {
+                showError('Sensor name is required');
+                return;
+            }
+
+            try {
+                await apiRequest(`/robot/sensors/${encodeURIComponent(name)}`, {
+                    method: 'DELETE'
+                });
+                await refreshRobotState();
+            } catch (error) {
+                console.error('Error clearing sensor:', error);
+                showError(`Failed to clear sensor: ${error.message}`);
+            }
+        }
+
+        async function stepperMoveAction() {
+            const motor = document.getElementById('action-stepper-motor').value;
+            const steps = Math.floor(getNumberInput('action-stepper-steps', 80));
+            const direction = document.getElementById('action-stepper-direction').value;
+
+            if (!motor) {
+                showError('No stepper motor selected');
+                return;
+            }
+
+            try {
+                await apiRequest('/actions/stepper_move', {
+                    method: 'POST',
+                    body: JSON.stringify({ motor, steps, direction })
+                });
+                await refreshRobotState();
+                await updateMotorStatus();
+            } catch (error) {
+                console.error('Error moving stepper:', error);
+                showError(`Failed to move stepper: ${error.message}`);
+            }
         }
 
         function createMotorCard(name, motor) {
