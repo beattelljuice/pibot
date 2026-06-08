@@ -1,7 +1,8 @@
 from flask import Flask, jsonify, request, send_file
+from action_executor import ActionExecutor, ActionExecutorError
 from motor import DCMotor, StepperMotor
 from motor_manager import MotorManager
-import os
+from robot_state import RobotState, RobotStateError
 from datetime import datetime
 
 
@@ -11,16 +12,148 @@ def api_log(msg: str):
     print(f"[{timestamp}] [API] {msg}")
 
 
-def create_api(motor_manager: MotorManager) -> Flask:
+def create_api(
+    motor_manager: MotorManager,
+    action_executor: ActionExecutor | None = None,
+    robot_state: RobotState | None = None,
+) -> Flask:
     """Create Flask API application."""
     app = Flask(__name__, static_folder='.', static_url_path='')
+    if robot_state is None:
+        robot_state = action_executor.robot_state if action_executor else None
+    if robot_state is None:
+        robot_state = RobotState()
+    if action_executor is None:
+        action_executor = ActionExecutor(motor_manager, robot_state=robot_state)
+    elif action_executor.robot_state is None:
+        action_executor.robot_state = robot_state
     api_log("Creating Flask API application")
+
+    def get_json_body() -> dict:
+        data = request.get_json(silent=True)
+        if data is None:
+            return {}
+        if not isinstance(data, dict):
+            raise ActionExecutorError("Request body must be a JSON object")
+        return data
+
+    def record_api_action(action: dict, result: str = "completed") -> None:
+        try:
+            robot_state.record_action(action, source="manual_api", result=result)
+        except Exception as e:
+            api_log(f"State action record failed: {e}")
+
+    def get_robot_snapshot() -> dict:
+        return robot_state.snapshot(
+            motor_states=motor_manager.list_motors(),
+            action_status=action_executor.get_status(),
+        )
 
     @app.route('/')
     def serve_ui():
         """Serve the web UI."""
         api_log("GET / - Serving UI")
         return send_file('index.html')
+
+    @app.route("/robot/state", methods=["GET"])
+    def get_robot_state():
+        """Get the complete robot state snapshot."""
+        api_log("GET /robot/state - Getting robot snapshot")
+        return jsonify(get_robot_snapshot())
+
+    @app.route("/robot/status", methods=["GET"])
+    def get_robot_status():
+        """Get compact robot state status."""
+        api_log("GET /robot/status - Getting robot status")
+        return jsonify(robot_state.get_status())
+
+    @app.route("/robot/goal", methods=["POST"])
+    def set_robot_goal():
+        """Set current operator goal."""
+        api_log(f"POST /robot/goal - Request body: {request.get_json(silent=True)}")
+        try:
+            data = get_json_body()
+            goal = data.get("goal", data.get("operator_request", ""))
+            return jsonify(robot_state.set_goal(goal))
+        except (ActionExecutorError, RobotStateError) as e:
+            api_log(f"State error: {e}")
+            return jsonify({"error": str(e)}), 400
+
+    @app.route("/robot/mode", methods=["POST"])
+    def set_robot_mode():
+        """Set robot mode: manual, ai, paused, or estop."""
+        api_log(f"POST /robot/mode - Request body: {request.get_json(silent=True)}")
+        try:
+            data = get_json_body()
+            mode = data.get("mode")
+            result = robot_state.set_mode(mode)
+            if result["mode"] == "estop":
+                action_executor.stop_all(source="estop")
+            return jsonify(result)
+        except (ActionExecutorError, RobotStateError) as e:
+            api_log(f"State error: {e}")
+            return jsonify({"error": str(e)}), 400
+
+    @app.route("/robot/estop", methods=["POST"])
+    def set_robot_estop():
+        """Activate emergency stop and stop all motors."""
+        api_log(f"POST /robot/estop - Request body: {request.get_json(silent=True)}")
+        try:
+            data = get_json_body()
+            reason = data.get("reason", "manual emergency stop")
+            state_result = robot_state.set_emergency_stop(True, reason)
+            stop_result = action_executor.stop_all(source="estop")
+            return jsonify(
+                {
+                    "status": "success",
+                    "robot": state_result,
+                    "stop": stop_result,
+                }
+            )
+        except (ActionExecutorError, RobotStateError) as e:
+            api_log(f"State error: {e}")
+            return jsonify({"error": str(e)}), 400
+
+    @app.route("/robot/estop/clear", methods=["POST"])
+    def clear_robot_estop():
+        """Clear emergency stop and leave robot paused."""
+        api_log("POST /robot/estop/clear - Clearing emergency stop")
+        try:
+            return jsonify(robot_state.set_emergency_stop(False))
+        except RobotStateError as e:
+            api_log(f"State error: {e}")
+            return jsonify({"error": str(e)}), 400
+
+    @app.route("/robot/sensors/<name>", methods=["POST"])
+    def update_robot_sensor(name: str):
+        """Update a sensor reading for the robot state snapshot."""
+        api_log(
+            f"POST /robot/sensors/{name} - Request body: {request.get_json(silent=True)}"
+        )
+        try:
+            data = get_json_body()
+            if "value" not in data:
+                return jsonify({"error": "Missing 'value' parameter"}), 400
+            result = robot_state.update_sensor(
+                name,
+                data["value"],
+                data.get("stale_after_ms"),
+                data.get("metadata"),
+            )
+            return jsonify(result)
+        except (ActionExecutorError, RobotStateError) as e:
+            api_log(f"State error: {e}")
+            return jsonify({"error": str(e)}), 400
+
+    @app.route("/robot/sensors/<name>", methods=["DELETE"])
+    def clear_robot_sensor(name: str):
+        """Clear a sensor reading from robot state."""
+        api_log(f"DELETE /robot/sensors/{name} - Clearing sensor")
+        try:
+            return jsonify(robot_state.clear_sensor(name))
+        except RobotStateError as e:
+            api_log(f"State error: {e}")
+            return jsonify({"error": str(e)}), 400
 
     @app.route("/motors", methods=["GET"])
     def list_motors():
@@ -65,6 +198,13 @@ def create_api(motor_manager: MotorManager) -> Flask:
 
         api_log(f"Setting motor '{name}' power to {power}%")
         motor.set_power(int(power))
+        record_api_action(
+            {
+                "type": "motor_power",
+                "motor": name,
+                "power": int(power),
+            }
+        )
         api_log(f"✓ Power set successfully")
         return jsonify({"status": "success", "motor": name, "power": motor.speed if motor.direction != "stopped" else 0, "direction": motor.direction})
 
@@ -93,6 +233,13 @@ def create_api(motor_manager: MotorManager) -> Flask:
 
         api_log(f"Setting stepper motor '{name}' speed to {rpm} RPM")
         motor.set_speed(float(rpm))
+        record_api_action(
+            {
+                "type": "stepper_speed",
+                "motor": name,
+                "rpm": float(rpm),
+            }
+        )
         api_log(f"✓ RPM set successfully")
         return jsonify({"status": "success", "motor": name, "rpm": rpm})
 
@@ -121,6 +268,15 @@ def create_api(motor_manager: MotorManager) -> Flask:
 
         api_log(f"Commanding stepper '{name}' to move {steps} steps {direction}")
         motor.step(steps, direction)
+        record_api_action(
+            {
+                "type": "stepper_move",
+                "motor": name,
+                "steps": steps,
+                "direction": direction,
+            },
+            "started",
+        )
         api_log(f"✓ Step command issued successfully")
         return jsonify(
             {
@@ -142,8 +298,84 @@ def create_api(motor_manager: MotorManager) -> Flask:
 
         api_log(f"Stopping motor '{name}'")
         motor.stop()
+        record_api_action({"type": "motor_stop", "motor": name})
         api_log(f"✓ Motor stopped successfully")
         return jsonify({"status": "success", "motor": name, "stopped": True})
+
+    @app.route("/actions/status", methods=["GET"])
+    def get_action_status():
+        """Get action executor status."""
+        api_log("GET /actions/status - Getting action executor status")
+        return jsonify(action_executor.get_status())
+
+    @app.route("/actions/stop", methods=["POST"])
+    @app.route("/actions/stop_all", methods=["POST"])
+    def action_stop_all():
+        """Stop every registered motor and clear any active timed action."""
+        api_log("POST /actions/stop_all - Stopping all motors")
+        try:
+            return jsonify(action_executor.stop_all(source="manual_api"))
+        except ActionExecutorError as e:
+            api_log(f"Action error: {e}")
+            return jsonify({"error": str(e)}), 400
+
+    @app.route("/actions/drive_tank", methods=["POST"])
+    def action_drive_tank():
+        """Drive left and right DC motors for a bounded duration."""
+        api_log(
+            f"POST /actions/drive_tank - Request body: {request.get_json(silent=True)}"
+        )
+        try:
+            data = get_json_body()
+            result = action_executor.drive_tank(
+                data.get("left_power"),
+                data.get("right_power"),
+                data.get("duration_ms"),
+                source="manual_api",
+            )
+            return jsonify(result)
+        except ActionExecutorError as e:
+            api_log(f"Action error: {e}")
+            return jsonify({"error": str(e)}), 400
+
+    @app.route("/actions/rotate", methods=["POST"])
+    def action_rotate():
+        """Rotate chassis in place for a bounded duration."""
+        api_log(
+            f"POST /actions/rotate - Request body: {request.get_json(silent=True)}"
+        )
+        try:
+            data = get_json_body()
+            result = action_executor.rotate(
+                data.get("power"),
+                data.get("direction"),
+                data.get("duration_ms"),
+                source="manual_api",
+            )
+            return jsonify(result)
+        except ActionExecutorError as e:
+            api_log(f"Action error: {e}")
+            return jsonify({"error": str(e)}), 400
+
+    @app.route("/actions/stepper_move", methods=["POST"])
+    def action_stepper_move():
+        """Move a named stepper motor by a bounded number of steps."""
+        api_log(
+            f"POST /actions/stepper_move - Request body: {request.get_json(silent=True)}"
+        )
+        try:
+            data = get_json_body()
+            motor_name = data.get("motor") or data.get("name")
+            result = action_executor.stepper_move(
+                motor_name,
+                data.get("steps"),
+                data.get("direction", "forward"),
+                source="manual_api",
+            )
+            return jsonify(result)
+        except ActionExecutorError as e:
+            api_log(f"Action error: {e}")
+            return jsonify({"error": str(e)}), 400
 
     @app.errorhandler(404)
     def not_found(error):

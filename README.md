@@ -94,6 +94,63 @@ curl -X POST http://localhost:5000/motors/stepper_1/step \
 curl -X POST http://localhost:5000/motors/left_motor/stop
 ```
 
+**Timed chassis drive:**
+```bash
+curl -X POST http://localhost:5000/actions/drive_tank \
+  -H "Content-Type: application/json" \
+  -d '{"left_power": 25, "right_power": 25, "duration_ms": 300}'
+```
+
+**Timed chassis rotate:**
+```bash
+curl -X POST http://localhost:5000/actions/rotate \
+  -H "Content-Type: application/json" \
+  -d '{"power": 25, "direction": "left", "duration_ms": 300}'
+```
+
+**Stop all motors:**
+```bash
+curl -X POST http://localhost:5000/actions/stop_all
+```
+
+**Action executor status:**
+```bash
+curl http://localhost:5000/actions/status
+```
+
+**Robot state snapshot:**
+```bash
+curl http://localhost:5000/robot/state
+```
+
+**Set robot goal:**
+```bash
+curl -X POST http://localhost:5000/robot/goal \
+  -H "Content-Type: application/json" \
+  -d '{"goal": "explore slowly and avoid obstacles"}'
+```
+
+**Set robot mode:**
+```bash
+curl -X POST http://localhost:5000/robot/mode \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "manual"}'
+```
+
+**Update a fake or real sensor reading:**
+```bash
+curl -X POST http://localhost:5000/robot/sensors/front_distance_cm \
+  -H "Content-Type: application/json" \
+  -d '{"value": 85, "stale_after_ms": 500}'
+```
+
+**Emergency stop:**
+```bash
+curl -X POST http://localhost:5000/robot/estop \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "operator stop"}'
+```
+
 ## Pin Configuration Guide
 
 ### DC Motor (2 pins)
