@@ -13,30 +13,33 @@ def log(msg: str, motor_name: str = None):
 
 
 class DCMotor:
-    """DC motor with PWM speed control and direction."""
+    """DC motor with L298N H-bridge driver (2 pins for direction + speed)."""
 
-    def __init__(self, gpio_controller, enable_pin: int, direction_pin: int, name: str = "DC"):
+    def __init__(self, gpio_controller, pin1: int, pin2: int, name: str = "DC"):
         """
-        Initialize DC motor.
+        Initialize DC motor with L298N H-bridge.
 
         Args:
             gpio_controller: GPIOController instance
-            enable_pin: PWM pin for speed control
-            direction_pin: Pin for direction control (HIGH=forward, LOW=backward)
+            pin1: First motor control pin (IN1)
+            pin2: Second motor control pin (IN2)
             name: Motor identifier
         """
         self.gpio = gpio_controller
-        self.enable_pin = enable_pin
-        self.direction_pin = direction_pin
+        self.pin1 = pin1
+        self.pin2 = pin2
         self.name = name
 
-        log(f"Initializing DC motor on pins enable={enable_pin}, direction={direction_pin}", self.name)
-        self.gpio.setup_output(enable_pin)
-        self.gpio.setup_output(direction_pin)
+        log(f"Initializing DC motor (L298N H-bridge) on pins pin1={pin1}, pin2={pin2}", self.name)
+        self.gpio.setup_output(pin1)
+        self.gpio.setup_output(pin2)
 
-        self.pwm = GPIO.PWM(enable_pin, 1000)
-        self.pwm.start(0)
-        log(f"PWM started at 1000Hz, initial duty cycle 0%", self.name)
+        # Create PWM for both pins
+        self.pwm1 = GPIO.PWM(pin1, 1000)
+        self.pwm2 = GPIO.PWM(pin2, 1000)
+        self.pwm1.start(0)
+        self.pwm2.start(0)
+        log(f"PWM started on both pins at 1000Hz", self.name)
 
         self.speed = 0
         self.direction = "stopped"
@@ -47,38 +50,54 @@ class DCMotor:
         speed = max(0, min(100, speed))
         log(f"set_speed() called with {speed}%", self.name)
         self.speed = speed
+
         try:
-            self.pwm.ChangeDutyCycle(speed)
-            log(f"PWM duty cycle set to {speed}%", self.name)
+            if self.direction == "forward":
+                log(f"Applying speed {speed}% in forward direction: pin1={speed}%, pin2=0%", self.name)
+                self.pwm1.ChangeDutyCycle(speed)
+                self.pwm2.ChangeDutyCycle(0)
+            elif self.direction == "backward":
+                log(f"Applying speed {speed}% in backward direction: pin1=0%, pin2={speed}%", self.name)
+                self.pwm1.ChangeDutyCycle(0)
+                self.pwm2.ChangeDutyCycle(speed)
+            elif self.direction == "stopped":
+                log(f"Motor stopped, setting both pins to 0%", self.name)
+                self.pwm1.ChangeDutyCycle(0)
+                self.pwm2.ChangeDutyCycle(0)
         except RuntimeError as e:
             log(f"PWM error: {e}, reinitializing...", self.name)
-            self.pwm.stop()
-            self.pwm = GPIO.PWM(self.enable_pin, 1000)
-            self.pwm.start(0)
-            self.pwm.ChangeDutyCycle(speed)
-            log(f"PWM reinitialized and set to {speed}%", self.name)
+            self.pwm1.stop()
+            self.pwm2.stop()
+            self.pwm1 = GPIO.PWM(self.pin1, 1000)
+            self.pwm2 = GPIO.PWM(self.pin2, 1000)
+            self.pwm1.start(0)
+            self.pwm2.start(0)
+            log(f"PWM reinitialized", self.name)
+            # Retry setting speed
+            self.set_speed(speed)
 
     def forward(self) -> None:
         """Set motor direction to forward."""
-        log(f"forward() called, pin {self.direction_pin} -> HIGH", self.name)
-        self.gpio.write(self.direction_pin, True)
+        log(f"forward() called", self.name)
         self.direction = "forward"
-        log(f"Direction set to forward", self.name)
+        log(f"Direction set to forward, applying current speed {self.speed}%", self.name)
+        self.set_speed(self.speed)
 
     def backward(self) -> None:
         """Set motor direction to backward."""
-        log(f"backward() called, pin {self.direction_pin} -> LOW", self.name)
-        self.gpio.write(self.direction_pin, False)
+        log(f"backward() called", self.name)
         self.direction = "backward"
-        log(f"Direction set to backward", self.name)
+        log(f"Direction set to backward, applying current speed {self.speed}%", self.name)
+        self.set_speed(self.speed)
 
     def stop(self) -> None:
         """Stop motor."""
-        log(f"stop() called, setting speed to 0", self.name)
+        log(f"stop() called, setting both pins to 0%", self.name)
         self.speed = 0
         self.direction = "stopped"
         try:
-            self.pwm.ChangeDutyCycle(0)
+            self.pwm1.ChangeDutyCycle(0)
+            self.pwm2.ChangeDutyCycle(0)
             log(f"Motor stopped - speed=0%, direction=stopped", self.name)
         except RuntimeError as e:
             log(f"Error stopping motor: {e}", self.name)
@@ -96,8 +115,9 @@ class DCMotor:
 
     def cleanup(self) -> None:
         """Clean up PWM."""
-        log(f"cleanup() called, stopping PWM", self.name)
-        self.pwm.stop()
+        log(f"cleanup() called, stopping PWM on both pins", self.name)
+        self.pwm1.stop()
+        self.pwm2.stop()
         log(f"Motor cleaned up successfully", self.name)
 
 

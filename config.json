@@ -1,12 +1,12 @@
 {
   "dc_motors": {
     "left_motor": {
-      "enable": 12,
-      "direction": 13
+      "pin1": 12,
+      "pin2": 13
     },
     "right_motor": {
-      "enable": 6,
-      "direction": 5
+      "pin1": 6,
+      "pin2": 5
     }
   },
   "stepper_motors": {

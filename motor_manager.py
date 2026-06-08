@@ -23,10 +23,10 @@ class MotorManager:
         self.gpio = gpio_controller
         self.motors: Dict[str, DCMotor | StepperMotor] = {}
 
-    def register_dc_motor(self, name: str, enable_pin: int, direction_pin: int) -> DCMotor:
-        """Register a new DC motor."""
-        log(f"Registering DC motor '{name}' on pins enable={enable_pin}, direction={direction_pin}")
-        motor = DCMotor(self.gpio, enable_pin, direction_pin, name)
+    def register_dc_motor(self, name: str, pin1: int, pin2: int) -> DCMotor:
+        """Register a new DC motor (L298N H-bridge with 2 pins)."""
+        log(f"Registering DC motor '{name}' on pins pin1={pin1}, pin2={pin2}")
+        motor = DCMotor(self.gpio, pin1, pin2, name)
         self.motors[name] = motor
         log(f"✓ DC motor '{name}' registered successfully")
         return motor

@@ -36,7 +36,7 @@ def main():
         dc_motors = config.get_dc_motors()
         main_log(f"Registering {len(dc_motors)} DC motors...")
         for name, pins in dc_motors.items():
-            manager.register_dc_motor(name, pins["enable"], pins["direction"])
+            manager.register_dc_motor(name, pins["pin1"], pins["pin2"])
         main_log(f"✓ {len(dc_motors)} DC motors registered")
 
         stepper_motors = config.get_stepper_motors()
