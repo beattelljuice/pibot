@@ -30,5 +30,15 @@
     "i2c_port": 1,
     "i2c_address": "0x3C",
     "rotate": 0
+  },
+  "camera": {
+    "enabled": true,
+    "device_index": 0,
+    "width": 640,
+    "height": 480,
+    "fps": 15,
+    "jpeg_quality": 85,
+    "warmup_frames": 2,
+    "stale_after_ms": 2000
   }
 }

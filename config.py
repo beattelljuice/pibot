@@ -50,3 +50,19 @@ class Config:
                 "rotate": 0,
             },
         )
+
+    def get_camera_config(self) -> Dict[str, Any]:
+        """Get USB camera configuration."""
+        return self.data.get(
+            "camera",
+            {
+                "enabled": False,
+                "device_index": 0,
+                "width": 640,
+                "height": 480,
+                "fps": 15,
+                "jpeg_quality": 85,
+                "warmup_frames": 2,
+                "stale_after_ms": 2000,
+            },
+        )

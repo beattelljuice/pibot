@@ -46,6 +46,50 @@ The browser UI includes both the manual motor controller and a Robot Runtime Tes
 - Fake or real sensor updates
 - Low-level stepper action tests
 - SH1106 OLED text and pixel-frame tests
+- USB camera snapshot and capture tests
+
+## USB Camera Setup
+
+Plug the USB camera into the Raspberry Pi before starting the server.
+
+Install OpenCV and optional camera tools:
+
+```bash
+sudo apt install -y python3-opencv v4l-utils
+```
+
+Check that the camera appears:
+
+```bash
+v4l2-ctl --list-devices
+```
+
+The default camera config uses device index `0`:
+
+```json
+"camera": {
+  "enabled": true,
+  "device_index": 0,
+  "width": 640,
+  "height": 480,
+  "fps": 15,
+  "jpeg_quality": 85,
+  "warmup_frames": 2,
+  "stale_after_ms": 2000
+}
+```
+
+If the camera is not the first video device, change `device_index` in `config.json`.
+
+The camera is exposed through:
+
+```text
+GET  /camera/status
+GET  /camera/snapshot.jpg
+POST /camera/capture
+```
+
+`/camera/snapshot.jpg` is for browser preview. `/camera/capture` returns JPEG image data as base64 plus metadata for the future AI vision loop.
 
 ## SH1106 OLED Wiring
 

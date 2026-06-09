@@ -514,6 +514,36 @@
             margin-bottom: 10px;
         }
 
+        .camera-preview-wrap {
+            background: #111827;
+            border: 2px solid #495057;
+            border-radius: 8px;
+            min-height: 190px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .camera-preview {
+            display: block;
+            width: 100%;
+            max-height: 320px;
+            object-fit: contain;
+        }
+
+        .camera-meta {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 0.86em;
+            color: #495057;
+            min-height: 42px;
+            word-break: break-word;
+        }
+
         @media (max-width: 600px) {
             .header h1 {
                 font-size: 1.8em;
@@ -582,6 +612,7 @@
                     <span class="status-chip" id="chip-action">Action: --</span>
                     <span class="status-chip" id="chip-sensors">Sensors: --</span>
                     <span class="status-chip" id="chip-display">Display: --</span>
+                    <span class="status-chip" id="chip-camera">Camera: --</span>
                 </div>
             </div>
 
@@ -721,6 +752,18 @@
                     </div>
                 </div>
 
+                <div class="runtime-card">
+                    <h3>USB Camera</h3>
+                    <div class="camera-preview-wrap">
+                        <img id="camera-preview" class="camera-preview" alt="Camera snapshot preview">
+                    </div>
+                    <div class="runtime-actions">
+                        <button class="btn btn-primary" onclick="refreshCameraPreview()">Snapshot</button>
+                        <button class="btn btn-forward" onclick="captureCameraJson()">Capture JSON</button>
+                    </div>
+                    <div class="camera-meta" id="camera-meta">No camera capture yet.</div>
+                </div>
+
                 <div class="runtime-card state-card">
                     <h3>Robot State</h3>
                     <pre class="state-json" id="robot-state-json">No state loaded.</pre>
@@ -854,6 +897,7 @@
             const actionChip = document.getElementById('chip-action');
             const sensorsChip = document.getElementById('chip-sensors');
             const displayChip = document.getElementById('chip-display');
+            const cameraChip = document.getElementById('chip-camera');
 
             if (!state || !state.robot) {
                 setChip(modeChip, 'Mode: --');
@@ -861,6 +905,7 @@
                 setChip(actionChip, 'Action: --');
                 setChip(sensorsChip, 'Sensors: --');
                 setChip(displayChip, 'Display: --');
+                setChip(cameraChip, 'Camera: --');
                 return;
             }
 
@@ -869,6 +914,7 @@
             const activeAction = state.robot.executor && state.robot.executor.active_action;
             const sensorCount = state.sensors ? Object.keys(state.sensors).length : 0;
             const display = state.robot.display;
+            const camera = state.robot.camera;
 
             setChip(modeChip, `Mode: ${mode}`, mode === 'ai' ? 'warn' : mode === 'estop' ? 'danger' : 'good');
             setChip(estopChip, `E-Stop: ${estop ? 'Active' : 'Clear'}`, estop ? 'danger' : 'good');
@@ -878,6 +924,11 @@
                 displayChip,
                 `Display: ${display && display.available ? 'Ready' : 'Unavailable'}`,
                 display && display.available ? 'good' : 'warn'
+            );
+            setChip(
+                cameraChip,
+                `Camera: ${camera && camera.available ? 'Ready' : 'Unavailable'}`,
+                camera && camera.available ? 'good' : 'warn'
             );
         }
 
@@ -1223,6 +1274,44 @@
             } catch (error) {
                 console.error('Error sending display frame:', error);
                 showError(`Failed to send display pixels: ${error.message}`);
+            }
+        }
+
+        async function refreshCameraPreview() {
+            const preview = document.getElementById('camera-preview');
+            const meta = document.getElementById('camera-meta');
+            if (!preview) return;
+
+            try {
+                const snapshotUrl = `${apiHost}/camera/snapshot.jpg?ts=${Date.now()}`;
+                await new Promise((resolve, reject) => {
+                    preview.onload = resolve;
+                    preview.onerror = () => reject(new Error('camera snapshot failed'));
+                    preview.src = snapshotUrl;
+                });
+                if (meta) {
+                    meta.textContent = `Snapshot loaded at ${new Date().toLocaleTimeString()}`;
+                }
+                await refreshRobotState();
+                clearError();
+            } catch (error) {
+                console.error('Error refreshing camera preview:', error);
+                showError(`Failed to refresh camera preview: ${error.message}`);
+            }
+        }
+
+        async function captureCameraJson() {
+            const meta = document.getElementById('camera-meta');
+            try {
+                const result = await apiRequest('/camera/capture', { method: 'POST' });
+                if (meta && result.frame) {
+                    meta.textContent = `Captured ${result.frame.width}x${result.frame.height}, ${result.frame.bytes} bytes at ${result.frame.captured_at}`;
+                }
+                await refreshRobotState();
+                clearError();
+            } catch (error) {
+                console.error('Error capturing camera JSON:', error);
+                showError(`Failed to capture camera JSON: ${error.message}`);
             }
         }
 

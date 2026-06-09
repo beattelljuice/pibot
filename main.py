@@ -5,6 +5,7 @@ from datetime import datetime
 
 from action_executor import ActionExecutor
 from api import create_api
+from camera_controller import CameraController
 from config import Config
 from display_controller import DisplayController
 from gpio_controller import GPIOController
@@ -25,6 +26,7 @@ def main() -> None:
     executor = None
     robot_state = None
     display = None
+    camera = None
     cleanup_started = False
 
     def cleanup(signum=None, frame=None, exit_process: bool = False) -> None:
@@ -58,6 +60,13 @@ def main() -> None:
                 gpio.cleanup()
             except Exception as e:
                 main_log(f"GPIO cleanup error: {e}")
+
+        if camera:
+            main_log("Releasing camera...")
+            try:
+                camera.release()
+            except Exception as e:
+                main_log(f"Camera cleanup error: {e}")
 
         main_log("Cleanup complete")
         main_log("=" * 60)
@@ -125,6 +134,24 @@ def main() -> None:
         else:
             main_log(f"OLED Display unavailable: {display_status['error']}")
 
+        camera_config = config.get_camera_config()
+        main_log("Initializing USB Camera Controller...")
+        camera = CameraController(
+            enabled=camera_config.get("enabled", False),
+            device_index=camera_config.get("device_index", 0),
+            width=camera_config.get("width", 640),
+            height=camera_config.get("height", 480),
+            fps=camera_config.get("fps", 15),
+            jpeg_quality=camera_config.get("jpeg_quality", 85),
+            warmup_frames=camera_config.get("warmup_frames", 2),
+            stale_after_ms=camera_config.get("stale_after_ms", 2000),
+        )
+        camera_status = camera.get_status()
+        if camera_status["available"]:
+            main_log("USB Camera Controller initialized")
+        else:
+            main_log(f"USB Camera unavailable: {camera_status['error']}")
+
         main_log("Initializing Action Executor...")
         executor = ActionExecutor(manager, robot_state=robot_state)
         main_log("Action Executor initialized")
@@ -141,7 +168,7 @@ def main() -> None:
         main_log("=" * 60)
         main_log("")
 
-        app = create_api(manager, executor, robot_state, display)
+        app = create_api(manager, executor, robot_state, display, camera)
 
         signal.signal(signal.SIGINT, handle_signal)
         signal.signal(signal.SIGTERM, handle_signal)

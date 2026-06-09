@@ -1,5 +1,6 @@
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, Response, jsonify, request, send_file
 from action_executor import ActionExecutor, ActionExecutorError
+from camera_controller import CameraController, CameraControllerError
 from display_controller import DisplayController, DisplayControllerError
 from motor import DCMotor, StepperMotor
 from motor_manager import MotorManager
@@ -18,6 +19,7 @@ def create_api(
     action_executor: ActionExecutor | None = None,
     robot_state: RobotState | None = None,
     display_controller: DisplayController | None = None,
+    camera_controller: CameraController | None = None,
 ) -> Flask:
     """Create Flask API application."""
     app = Flask(__name__, static_folder='.', static_url_path='')
@@ -31,6 +33,8 @@ def create_api(
         action_executor.robot_state = robot_state
     if display_controller is None:
         display_controller = DisplayController(enabled=False)
+    if camera_controller is None:
+        camera_controller = CameraController(enabled=False)
     api_log("Creating Flask API application")
 
     def get_json_body() -> dict:
@@ -53,12 +57,35 @@ def create_api(
             action_status=action_executor.get_status(),
         )
         snapshot["robot"]["display"] = display_controller.get_status()
+        snapshot["robot"]["camera"] = camera_controller.get_status()
         return snapshot
 
     def display_error_response(error: DisplayControllerError):
         status_code = 503 if not display_controller.available else 400
         api_log(f"Display error: {error}")
         return jsonify({"error": str(error), "display": display_controller.get_status()}), status_code
+
+    def camera_error_response(error: CameraControllerError):
+        status_code = 503 if not camera_controller.available else 400
+        api_log(f"Camera error: {error}")
+        return jsonify({"error": str(error), "camera": camera_controller.get_status()}), status_code
+
+    def record_camera_capture(meta: dict) -> None:
+        try:
+            robot_state.update_sensor(
+                "camera_snapshot",
+                {
+                    "captured_at": meta["captured_at"],
+                    "width": meta["width"],
+                    "height": meta["height"],
+                    "mime": meta["mime"],
+                    "bytes": meta["bytes"],
+                    "snapshot_url": "/camera/snapshot.jpg",
+                },
+                camera_controller.stale_after_ms,
+            )
+        except Exception as e:
+            api_log(f"Camera sensor state update failed: {e}")
 
     @app.route('/')
     def serve_ui():
@@ -231,6 +258,66 @@ def create_api(
             if isinstance(e, DisplayControllerError):
                 return display_error_response(e)
             return jsonify({"error": str(e)}), 400
+
+    @app.route("/camera/status", methods=["GET"])
+    def get_camera_status():
+        """Get USB camera status."""
+        api_log("GET /camera/status - Getting camera status")
+        return jsonify(camera_controller.get_status())
+
+    @app.route("/camera/snapshot.jpg", methods=["GET"])
+    def get_camera_snapshot():
+        """Capture and return a JPEG snapshot from the USB camera."""
+        api_log("GET /camera/snapshot.jpg - Capturing JPEG snapshot")
+        try:
+            jpeg_bytes, meta = camera_controller.capture_jpeg()
+            record_camera_capture(meta)
+            record_api_action(
+                {
+                    "type": "camera_snapshot",
+                    "width": meta["width"],
+                    "height": meta["height"],
+                    "bytes": meta["bytes"],
+                }
+            )
+            return Response(
+                jpeg_bytes,
+                mimetype="image/jpeg",
+                headers={"Cache-Control": "no-store"},
+            )
+        except CameraControllerError as e:
+            return camera_error_response(e)
+
+    @app.route("/camera/capture", methods=["POST"])
+    def capture_camera_json():
+        """Capture a JPEG frame and return metadata plus base64 image data."""
+        api_log("POST /camera/capture - Capturing JSON camera frame")
+        try:
+            from base64 import b64encode
+
+            jpeg_bytes, meta = camera_controller.capture_jpeg()
+            record_camera_capture(meta)
+            record_api_action(
+                {
+                    "type": "camera_capture",
+                    "width": meta["width"],
+                    "height": meta["height"],
+                    "bytes": meta["bytes"],
+                }
+            )
+            return jsonify(
+                {
+                    "status": "success",
+                    "camera": camera_controller.get_status(),
+                    "frame": {
+                        **meta,
+                        "data": b64encode(jpeg_bytes).decode("ascii"),
+                        "encoding": "base64",
+                    },
+                }
+            )
+        except CameraControllerError as e:
+            return camera_error_response(e)
 
     @app.route("/motors", methods=["GET"])
     def list_motors():

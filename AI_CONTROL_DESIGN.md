@@ -99,6 +99,8 @@ Examples:
 
 Every sensor reading should include a timestamp. Old sensor data should be treated as stale.
 
+Camera frames should not be embedded into every `/robot/state` response. Keep the state snapshot lightweight by storing camera availability and latest capture metadata, then let the AI loop request a fresh image only when needed.
+
 ### 3. AI Decision Loop
 
 Runs slower, usually 1-4 Hz at first.
@@ -231,6 +233,32 @@ The AI can eventually use:
 ```
 
 For actual use, `rows` must contain 64 strings, each exactly 128 characters. `1` means lit pixel and `0` means unlit pixel.
+
+## Camera Sensor Note
+
+The USB camera is a sensor capability, not an action executor.
+
+Expose it through:
+
+- `GET /camera/status`
+- `GET /camera/snapshot.jpg`
+- `POST /camera/capture`
+
+The AI loop should use `/camera/capture` when it needs a fresh vision input. The robot state should carry only compact metadata:
+
+```json
+{
+  "camera_snapshot": {
+    "captured_at": "2026-06-09T12:00:00.000",
+    "width": 640,
+    "height": 480,
+    "mime": "image/jpeg",
+    "snapshot_url": "/camera/snapshot.jpg"
+  }
+}
+```
+
+Later, the Ollama vision request can attach the base64 JPEG from `/camera/capture` if the selected model supports image input.
 
 ## Arm Control Note
 
