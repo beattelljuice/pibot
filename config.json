@@ -42,5 +42,12 @@
     "jpeg_quality": 85,
     "warmup_frames": 2,
     "stale_after_ms": 2000
+  },
+  "safety": {
+    "manual_enforcement": false,
+    "obstacle_enforcement": false,
+    "max_drive_power": 100,
+    "max_action_ms": 1500,
+    "max_stepper_steps": 500
   }
 }

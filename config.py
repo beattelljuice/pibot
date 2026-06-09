@@ -68,3 +68,16 @@ class Config:
                 "stale_after_ms": 2000,
             },
         )
+
+    def get_safety_config(self) -> Dict[str, Any]:
+        """Get safety supervisor configuration."""
+        return self.data.get(
+            "safety",
+            {
+                "manual_enforcement": False,
+                "obstacle_enforcement": False,
+                "max_drive_power": 100,
+                "max_action_ms": 1500,
+                "max_stepper_steps": 500,
+            },
+        )

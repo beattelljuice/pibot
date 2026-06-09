@@ -613,6 +613,7 @@
                     <span class="status-chip" id="chip-sensors">Sensors: --</span>
                     <span class="status-chip" id="chip-display">Display: --</span>
                     <span class="status-chip" id="chip-camera">Camera: --</span>
+                    <span class="status-chip" id="chip-safety">Safety: --</span>
                 </div>
             </div>
 
@@ -765,6 +766,35 @@
                 </div>
 
                 <div class="runtime-card state-card">
+                    <h3>Safety Supervisor</h3>
+                    <label for="proposal-json">Proposed Action JSON</label>
+                    <textarea id="proposal-json">{
+  "source": "ai",
+  "actions": [
+    {
+      "type": "drive_tank",
+      "left_power": 25,
+      "right_power": 25,
+      "duration_ms": 300
+    }
+  ]
+}</textarea>
+                    <div class="runtime-actions">
+                        <button class="btn btn-primary" onclick="setSafetyExample('drive')">Drive</button>
+                        <button class="btn btn-primary" onclick="setSafetyExample('rotate')">Rotate</button>
+                        <button class="btn btn-primary" onclick="setSafetyExample('stepper')">Stepper</button>
+                        <button class="btn btn-primary" onclick="setSafetyExample('display')">OLED</button>
+                        <button class="btn btn-primary" onclick="setSafetyExample('camera')">Camera</button>
+                        <button class="btn btn-stop" onclick="setSafetyExample('stop')">Stop</button>
+                    </div>
+                    <div class="runtime-actions" style="margin-top: 10px;">
+                        <button class="btn btn-forward" onclick="submitProposedActions()">Submit Proposal</button>
+                        <button class="btn btn-primary" onclick="refreshSafetyStatus()">Safety Status</button>
+                    </div>
+                    <pre class="state-json" id="safety-result-json">No safety result yet.</pre>
+                </div>
+
+                <div class="runtime-card state-card">
                     <h3>Robot State</h3>
                     <pre class="state-json" id="robot-state-json">No state loaded.</pre>
                 </div>
@@ -898,6 +928,7 @@
             const sensorsChip = document.getElementById('chip-sensors');
             const displayChip = document.getElementById('chip-display');
             const cameraChip = document.getElementById('chip-camera');
+            const safetyChip = document.getElementById('chip-safety');
 
             if (!state || !state.robot) {
                 setChip(modeChip, 'Mode: --');
@@ -906,6 +937,7 @@
                 setChip(sensorsChip, 'Sensors: --');
                 setChip(displayChip, 'Display: --');
                 setChip(cameraChip, 'Camera: --');
+                setChip(safetyChip, 'Safety: --');
                 return;
             }
 
@@ -915,6 +947,7 @@
             const sensorCount = state.sensors ? Object.keys(state.sensors).length : 0;
             const display = state.robot.display;
             const camera = state.robot.camera;
+            const safety = state.robot.safety;
 
             setChip(modeChip, `Mode: ${mode}`, mode === 'ai' ? 'warn' : mode === 'estop' ? 'danger' : 'good');
             setChip(estopChip, `E-Stop: ${estop ? 'Active' : 'Clear'}`, estop ? 'danger' : 'good');
@@ -929,6 +962,11 @@
                 cameraChip,
                 `Camera: ${camera && camera.available ? 'Ready' : 'Unavailable'}`,
                 camera && camera.available ? 'good' : 'warn'
+            );
+            setChip(
+                safetyChip,
+                `Safety: ${safety ? 'Ready' : 'Unavailable'}`,
+                safety ? 'good' : 'warn'
             );
         }
 
@@ -1312,6 +1350,112 @@
             } catch (error) {
                 console.error('Error capturing camera JSON:', error);
                 showError(`Failed to capture camera JSON: ${error.message}`);
+            }
+        }
+
+        function setSafetyExample(kind) {
+            const examples = {
+                drive: {
+                    source: 'ai',
+                    actions: [
+                        {
+                            type: 'drive_tank',
+                            left_power: 25,
+                            right_power: 25,
+                            duration_ms: 300
+                        }
+                    ]
+                },
+                rotate: {
+                    source: 'ai',
+                    actions: [
+                        {
+                            type: 'rotate',
+                            power: 25,
+                            direction: 'left',
+                            duration_ms: 300
+                        }
+                    ]
+                },
+                stepper: {
+                    source: 'ai',
+                    actions: [
+                        {
+                            type: 'stepper_move',
+                            motor: 'stepper_1',
+                            steps: 80,
+                            direction: 'forward'
+                        }
+                    ]
+                },
+                display: {
+                    source: 'ai',
+                    actions: [
+                        {
+                            type: 'display_text',
+                            text: 'AI online',
+                            x: 0,
+                            y: 0,
+                            clear: true
+                        }
+                    ]
+                },
+                camera: {
+                    source: 'ai',
+                    actions: [
+                        {
+                            type: 'camera_capture'
+                        }
+                    ]
+                },
+                stop: {
+                    source: 'ai',
+                    actions: [
+                        {
+                            type: 'stop_all'
+                        }
+                    ]
+                }
+            };
+
+            const input = document.getElementById('proposal-json');
+            if (input && examples[kind]) {
+                input.value = JSON.stringify(examples[kind], null, 2);
+            }
+        }
+
+        async function submitProposedActions() {
+            const input = document.getElementById('proposal-json');
+            const output = document.getElementById('safety-result-json');
+            try {
+                const payload = JSON.parse(input.value);
+                const result = await apiRequest('/actions/propose', {
+                    method: 'POST',
+                    body: JSON.stringify(payload)
+                });
+                if (output) {
+                    output.textContent = JSON.stringify(result, null, 2);
+                }
+                await refreshRobotState();
+                await updateMotorStatus();
+                clearError();
+            } catch (error) {
+                console.error('Error submitting proposed actions:', error);
+                showError(`Failed to submit proposal: ${error.message}`);
+            }
+        }
+
+        async function refreshSafetyStatus() {
+            const output = document.getElementById('safety-result-json');
+            try {
+                const result = await apiRequest('/safety/status');
+                if (output) {
+                    output.textContent = JSON.stringify(result, null, 2);
+                }
+                clearError();
+            } catch (error) {
+                console.error('Error refreshing safety status:', error);
+                showError(`Failed to refresh safety status: ${error.message}`);
             }
         }
 

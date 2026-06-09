@@ -11,6 +11,7 @@ from display_controller import DisplayController
 from gpio_controller import GPIOController
 from motor_manager import MotorManager
 from robot_state import RobotState
+from safety_supervisor import SafetySupervisor
 
 
 def main_log(msg: str) -> None:
@@ -27,6 +28,7 @@ def main() -> None:
     robot_state = None
     display = None
     camera = None
+    safety = None
     cleanup_started = False
 
     def cleanup(signum=None, frame=None, exit_process: bool = False) -> None:
@@ -158,6 +160,21 @@ def main() -> None:
         executor = ActionExecutor(manager, robot_state=robot_state)
         main_log("Action Executor initialized")
 
+        safety_config = config.get_safety_config()
+        main_log("Initializing Safety Supervisor...")
+        safety = SafetySupervisor(
+            robot_state=robot_state,
+            action_executor=executor,
+            display_controller=display,
+            camera_controller=camera,
+            manual_enforcement=safety_config.get("manual_enforcement", False),
+            obstacle_enforcement=safety_config.get("obstacle_enforcement", False),
+            max_drive_power=safety_config.get("max_drive_power", 100),
+            max_action_ms=safety_config.get("max_action_ms", 1500),
+            max_stepper_steps=safety_config.get("max_stepper_steps", 500),
+        )
+        main_log("Safety Supervisor initialized")
+
         api_config = config.get_api_config()
         main_log("")
         main_log("=" * 60)
@@ -170,7 +187,7 @@ def main() -> None:
         main_log("=" * 60)
         main_log("")
 
-        app = create_api(manager, executor, robot_state, display, camera)
+        app = create_api(manager, executor, robot_state, display, camera, safety)
 
         signal.signal(signal.SIGINT, handle_signal)
         signal.signal(signal.SIGTERM, handle_signal)

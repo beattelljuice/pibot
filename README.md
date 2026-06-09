@@ -42,11 +42,39 @@ The browser UI includes both the manual motor controller and a Robot Runtime Tes
 - Robot state/status
 - Goal and mode changes
 - Emergency stop and clear
+- Safety supervisor proposed-action tests
 - Timed drive and rotate actions
 - Fake or real sensor updates
 - Low-level stepper action tests
 - SH1106 OLED text and pixel-frame tests
 - USB camera snapshot and capture tests
+
+## Phase 3 Safety Tests
+
+Run the standalone fake-hardware safety test harness:
+
+```bash
+python3 phase3_test_harness.py
+```
+
+It prints structured JSON with pass/fail results.
+
+The AI-facing supervised action endpoint is:
+
+```text
+GET  /safety/status
+POST /actions/propose
+```
+
+Example proposal:
+
+```bash
+curl -X POST http://localhost:5000/actions/propose \
+  -H "Content-Type: application/json" \
+  -d '{"source":"ai","actions":[{"type":"drive_tank","left_power":25,"right_power":25,"duration_ms":300}]}'
+```
+
+AI movement is allowed only while robot mode is `ai`. Safe non-movement actions such as OLED text and camera capture are allowed in paused or emergency-stop states.
 
 ## USB Camera Setup
 

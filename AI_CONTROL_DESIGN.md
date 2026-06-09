@@ -423,6 +423,8 @@ Create a `SafetySupervisor` that accepts proposed actions and returns approved a
 
 The executor should only execute approved actions.
 
+The supervised AI/future-autonomy entrypoint is `POST /actions/propose`. Existing manual controls remain available for testing, while AI movement proposals are blocked unless the robot mode is `ai`. `GET /safety/status` reports configured limits and the latest safety decision.
+
 ### Phase 4: Add Ollama client
 
 Create an `OllamaBrain` module that:

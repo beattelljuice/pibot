@@ -5,6 +5,7 @@ from display_controller import DisplayController, DisplayControllerError
 from motor import DCMotor, StepperMotor
 from motor_manager import MotorManager
 from robot_state import RobotState, RobotStateError
+from safety_supervisor import SafetySupervisor, SafetySupervisorError
 from datetime import datetime
 
 
@@ -20,6 +21,7 @@ def create_api(
     robot_state: RobotState | None = None,
     display_controller: DisplayController | None = None,
     camera_controller: CameraController | None = None,
+    safety_supervisor: SafetySupervisor | None = None,
 ) -> Flask:
     """Create Flask API application."""
     app = Flask(__name__, static_folder='.', static_url_path='')
@@ -35,6 +37,13 @@ def create_api(
         display_controller = DisplayController(enabled=False)
     if camera_controller is None:
         camera_controller = CameraController(enabled=False)
+    if safety_supervisor is None:
+        safety_supervisor = SafetySupervisor(
+            robot_state=robot_state,
+            action_executor=action_executor,
+            display_controller=display_controller,
+            camera_controller=camera_controller,
+        )
     api_log("Creating Flask API application")
 
     def get_json_body() -> dict:
@@ -58,6 +67,7 @@ def create_api(
         )
         snapshot["robot"]["display"] = display_controller.get_status()
         snapshot["robot"]["camera"] = camera_controller.get_status()
+        snapshot["robot"]["safety"] = safety_supervisor.get_status()
         return snapshot
 
     def display_error_response(error: DisplayControllerError):
@@ -465,6 +475,28 @@ def create_api(
         record_api_action({"type": "motor_stop", "motor": name})
         api_log(f"✓ Motor stopped successfully")
         return jsonify({"status": "success", "motor": name, "stopped": True})
+
+    @app.route("/safety/status", methods=["GET"])
+    def get_safety_status():
+        """Get safety supervisor status."""
+        api_log("GET /safety/status - Getting safety status")
+        return jsonify(safety_supervisor.get_status())
+
+    @app.route("/actions/propose", methods=["POST"])
+    def propose_actions():
+        """Submit proposed actions through the safety supervisor."""
+        api_log(f"POST /actions/propose - Request body: {request.get_json(silent=True)}")
+        try:
+            data = get_json_body()
+            source = data.get("source", "ai")
+            actions = data.get("actions")
+            if actions is None and "action" in data:
+                actions = data["action"]
+            result = safety_supervisor.propose(actions, source=source)
+            return jsonify(result)
+        except (ActionExecutorError, SafetySupervisorError) as e:
+            api_log(f"Safety action error: {e}")
+            return jsonify({"error": str(e)}), 400
 
     @app.route("/actions/status", methods=["GET"])
     def get_action_status():
