@@ -55,7 +55,7 @@
     "url": "http://10.0.0.9:11434",
     "model": "minicpm-v4.6:1b",
     "two_stage": true,
-    "translator_model": "qwen2.5:0.5b",
+    "translator_model": "cogito:3b",
     "translator_timeout_ms": 15000,
     "timeout_ms": 60000,
     "include_camera": true,
