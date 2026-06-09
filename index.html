@@ -3,924 +3,701 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Motor Controller</title>
+    <title>PiBot Control</title>
     <style>
+        :root {
+            --bg: #f4f6f8;
+            --panel: #ffffff;
+            --panel-soft: #f8fafc;
+            --border: #d9e0e8;
+            --text: #17202a;
+            --muted: #667085;
+            --blue: #2563eb;
+            --blue-dark: #1d4ed8;
+            --green: #16803c;
+            --green-bg: #eaf7ee;
+            --amber: #9a5b00;
+            --amber-bg: #fff4db;
+            --red: #b42318;
+            --red-bg: #fff0ee;
+            --dark: #101828;
+        }
+
         * {
-            margin: 0;
-            padding: 0;
             box-sizing: border-box;
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-            color: #333;
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: "Segoe UI", Arial, sans-serif;
+            line-height: 1.4;
         }
 
-        .container {
-            max-width: 1200px;
+        .app {
+            width: min(1500px, calc(100vw - 32px));
             margin: 0 auto;
+            padding: 20px 0 36px;
         }
 
-        .header {
-            text-align: center;
-            color: white;
-            margin-bottom: 40px;
-        }
-
-        .header h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
-        }
-
-        .header p {
-            font-size: 1.1em;
-            opacity: 0.9;
-        }
-
-        .api-config {
-            background: rgba(255, 255, 255, 0.95);
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 30px;
-            display: flex;
-            gap: 10px;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-
-        .api-config label {
-            font-weight: 600;
-            color: #667eea;
-        }
-
-        .api-config input {
-            padding: 8px 12px;
-            border: 2px solid #667eea;
-            border-radius: 5px;
-            font-size: 0.95em;
-        }
-
-        .api-config button {
-            background: #667eea;
-            color: white;
-            border: none;
-            padding: 8px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-weight: 600;
-            transition: background 0.3s;
-        }
-
-        .api-config button:hover {
-            background: #764ba2;
-        }
-
-        .status-indicator {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            margin-left: 20px;
-        }
-
-        .status-dot {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background: #ff6b6b;
-            animation: pulse-error 2s infinite;
-        }
-
-        .status-dot.connected {
-            background: #51cf66;
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
-        @keyframes pulse-error {
-            0%, 100% { opacity: 0.5; }
-            50% { opacity: 1; }
-        }
-
-        .motors-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 20px;
-            margin-bottom: 20px;
-        }
-
-        .motor-card {
-            background: white;
-            border-radius: 15px;
-            padding: 25px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-            transition: transform 0.3s, box-shadow 0.3s;
-        }
-
-        .motor-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
-        }
-
-        .motor-card h2 {
-            color: #667eea;
-            margin-bottom: 5px;
-            font-size: 1.4em;
-        }
-
-        .motor-type {
-            font-size: 0.85em;
-            color: #999;
-            margin-bottom: 20px;
-            font-weight: 500;
-        }
-
-        .control-group {
-            margin-bottom: 20px;
-        }
-
-        .control-group label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #555;
-            font-size: 0.95em;
-        }
-
-        .slider-container {
+        .topbar {
             display: flex;
             align-items: center;
-            gap: 10px;
-        }
-
-        input[type="range"] {
-            flex: 1;
-            height: 6px;
-            border-radius: 3px;
-            background: #e0e0e0;
-            outline: none;
-            -webkit-appearance: none;
-            appearance: none;
-        }
-
-        input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            background: #667eea;
-            cursor: pointer;
-            transition: background 0.3s;
-        }
-
-        input[type="range"]::-webkit-slider-thumb:hover {
-            background: #764ba2;
-        }
-
-        input[type="range"]::-moz-range-thumb {
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            background: #667eea;
-            cursor: pointer;
-            border: none;
-            transition: background 0.3s;
-        }
-
-        input[type="range"]::-moz-range-thumb:hover {
-            background: #764ba2;
-        }
-
-        .slider-value {
-            min-width: 50px;
-            text-align: right;
-            font-weight: 600;
-            color: #667eea;
-            font-size: 1.1em;
-        }
-
-        .button-group {
-            display: flex;
-            gap: 10px;
-            margin-top: 10px;
-        }
-
-        .btn {
-            flex: 1;
-            padding: 10px 15px;
-            border: none;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            font-size: 0.95em;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .btn-primary {
-            background: #667eea;
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background: #764ba2;
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-        }
-
-        .btn-primary:active {
-            transform: translateY(0);
-        }
-
-        .btn-forward {
-            background: #51cf66;
-            color: white;
-        }
-
-        .btn-forward:hover {
-            background: #40c057;
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(81, 207, 102, 0.4);
-        }
-
-        .btn-backward {
-            background: #ffa94d;
-            color: white;
-        }
-
-        .btn-backward:hover {
-            background: #ff9500;
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(255, 165, 77, 0.4);
-        }
-
-        .btn-stop {
-            background: #ff6b6b;
-            color: white;
-        }
-
-        .btn-stop:hover {
-            background: #fa5252;
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(255, 107, 107, 0.4);
-        }
-
-        .btn:active {
-            transform: translateY(-1px);
-        }
-
-        .btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .stepper-controls {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-        }
-
-        .stepper-input {
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-        }
-
-        .stepper-input input {
-            padding: 10px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 1em;
-            transition: border-color 0.3s;
-        }
-
-        .stepper-input input:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .status-display {
-            background: #f5f5f5;
-            padding: 12px;
-            border-radius: 8px;
-            margin-top: 15px;
-            font-size: 0.9em;
-            color: #666;
-        }
-
-        .status-display span {
-            font-weight: 600;
-            color: #667eea;
-        }
-
-        .footer {
-            text-align: center;
-            color: white;
-            margin-top: 40px;
-            font-size: 0.9em;
-            opacity: 0.8;
-        }
-
-        .error-message {
-            background: #ffe0e0;
-            color: #d32f2f;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            display: none;
-        }
-
-        .error-message.show {
-            display: block;
-        }
-
-        .runtime-panel {
-            background: rgba(255, 255, 255, 0.95);
-            border-radius: 10px;
-            padding: 20px;
-            margin-bottom: 30px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
-        }
-
-        .runtime-header {
-            display: flex;
             justify-content: space-between;
             gap: 16px;
-            align-items: center;
-            margin-bottom: 18px;
-            flex-wrap: wrap;
+            margin-bottom: 16px;
         }
 
-        .runtime-header h2 {
-            color: #667eea;
-            font-size: 1.45em;
+        .title h1 {
+            margin: 0;
+            font-size: 1.55rem;
+            letter-spacing: 0;
         }
 
-        .runtime-status {
+        .title p {
+            margin: 3px 0 0;
+            color: var(--muted);
+            font-size: 0.92rem;
+        }
+
+        .api-box {
             display: flex;
+            align-items: center;
             gap: 8px;
-            flex-wrap: wrap;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px;
         }
 
-        .status-chip {
-            background: #f1f3f5;
-            color: #495057;
-            border: 1px solid #dee2e6;
-            border-radius: 999px;
-            padding: 6px 10px;
-            font-size: 0.82em;
+        label {
+            display: block;
+            color: var(--muted);
             font-weight: 700;
+            font-size: 0.78rem;
+            margin-bottom: 5px;
+        }
+
+        input,
+        select,
+        textarea {
+            width: 100%;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: #fff;
+            color: var(--text);
+            font: inherit;
+            padding: 9px 10px;
+            min-height: 38px;
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 76px;
+        }
+
+        input:focus,
+        select:focus,
+        textarea:focus {
+            outline: 2px solid rgba(37, 99, 235, 0.18);
+            border-color: var(--blue);
+        }
+
+        button {
+            border: 1px solid transparent;
+            border-radius: 8px;
+            background: var(--blue);
+            color: #fff;
+            cursor: pointer;
+            font-weight: 700;
+            min-height: 38px;
+            padding: 8px 12px;
             white-space: nowrap;
         }
 
-        .status-chip.good {
-            background: #ebfbee;
-            color: #2b8a3e;
-            border-color: #b2f2bb;
+        button:hover {
+            background: var(--blue-dark);
         }
 
-        .status-chip.warn {
-            background: #fff4e6;
-            color: #e67700;
-            border-color: #ffd8a8;
+        button.secondary {
+            background: #fff;
+            color: var(--text);
+            border-color: var(--border);
         }
 
-        .status-chip.danger {
-            background: #fff5f5;
-            color: #c92a2a;
-            border-color: #ffc9c9;
+        button.secondary:hover {
+            background: var(--panel-soft);
         }
 
-        .runtime-grid {
+        button.good {
+            background: var(--green);
+        }
+
+        button.danger {
+            background: var(--red);
+        }
+
+        button.danger:hover {
+            background: #971b12;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .banner {
+            display: none;
+            margin-bottom: 16px;
+            border-radius: 8px;
+            padding: 10px 12px;
+            background: var(--red-bg);
+            color: var(--red);
+            border: 1px solid #ffd1cc;
+            font-weight: 700;
+        }
+
+        .banner.show {
+            display: block;
+        }
+
+        .status-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            grid-template-columns: repeat(8, minmax(120px, 1fr));
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .chip {
+            border: 1px solid var(--border);
+            background: var(--panel);
+            border-radius: 8px;
+            min-height: 52px;
+            padding: 8px 10px;
+        }
+
+        .chip .label {
+            display: block;
+            color: var(--muted);
+            font-size: 0.72rem;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .chip .value {
+            display: block;
+            margin-top: 2px;
+            font-size: 0.95rem;
+            font-weight: 800;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .chip.good {
+            background: var(--green-bg);
+            border-color: #b7e5c4;
+        }
+
+        .chip.warn {
+            background: var(--amber-bg);
+            border-color: #f2d58a;
+        }
+
+        .chip.danger {
+            background: var(--red-bg);
+            border-color: #ffc9c2;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: minmax(320px, 420px) 1fr;
+            gap: 16px;
+            align-items: start;
+        }
+
+        .stack {
+            display: grid;
             gap: 16px;
         }
 
-        .runtime-card {
-            background: white;
-            border: 1px solid #e9ecef;
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
             border-radius: 8px;
-            padding: 16px;
+            padding: 14px;
         }
 
-        .runtime-card h3 {
-            color: #667eea;
-            font-size: 1.05em;
+        .panel h2 {
+            margin: 0 0 12px;
+            font-size: 1rem;
+            letter-spacing: 0;
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
             margin-bottom: 12px;
         }
 
-        .runtime-card label {
-            display: block;
-            margin-bottom: 6px;
-            font-weight: 600;
-            color: #555;
-            font-size: 0.9em;
-        }
-
-        .runtime-card input,
-        .runtime-card select,
-        .runtime-card textarea {
-            width: 100%;
-            padding: 9px 10px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 0.95em;
-            margin-bottom: 10px;
-            transition: border-color 0.3s;
-            font-family: inherit;
-        }
-
-        .runtime-card input:focus,
-        .runtime-card select:focus,
-        .runtime-card textarea:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .runtime-card textarea {
-            resize: vertical;
-            min-height: 80px;
-        }
-
-        .runtime-check {
-            display: flex !important;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 10px;
-            font-weight: 600;
-            color: #555;
-            font-size: 0.9em;
-        }
-
-        .runtime-check input {
-            width: auto;
+        .panel-header h2 {
             margin: 0;
         }
 
-        .runtime-row {
+        .row {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 10px;
         }
 
-        .runtime-actions {
+        .actions {
             display: flex;
-            gap: 10px;
             flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
         }
 
-        .runtime-actions .btn {
-            flex: 1 1 120px;
+        .check-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-height: 38px;
+            color: var(--text);
+            font-weight: 700;
         }
 
-        .state-card {
-            grid-column: 1 / -1;
+        .check-row input {
+            width: auto;
+            min-height: auto;
         }
 
-        .state-json {
-            background: #212529;
-            color: #f8f9fa;
+        .summary-list {
+            display: grid;
+            gap: 8px;
+        }
+
+        .summary-item {
+            border: 1px solid var(--border);
+            background: var(--panel-soft);
             border-radius: 8px;
-            padding: 14px;
-            min-height: 220px;
-            max-height: 420px;
+            padding: 10px;
+        }
+
+        .summary-title {
+            font-weight: 800;
+            margin-bottom: 4px;
+        }
+
+        .summary-meta {
+            color: var(--muted);
+            font-size: 0.82rem;
+        }
+
+        .summary-text {
+            margin-top: 6px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .pill-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: #fff;
+            padding: 4px 8px;
+            font-size: 0.8rem;
+            font-weight: 800;
+            color: var(--text);
+        }
+
+        .pill.good {
+            color: var(--green);
+            background: var(--green-bg);
+            border-color: #b7e5c4;
+        }
+
+        .pill.warn {
+            color: var(--amber);
+            background: var(--amber-bg);
+            border-color: #f2d58a;
+        }
+
+        .pill.danger {
+            color: var(--red);
+            background: var(--red-bg);
+            border-color: #ffc9c2;
+        }
+
+        .muted {
+            color: var(--muted);
+        }
+
+        .kv {
+            display: grid;
+            grid-template-columns: 130px 1fr;
+            gap: 6px 10px;
+            font-size: 0.9rem;
+        }
+
+        .kv div:nth-child(odd) {
+            color: var(--muted);
+            font-weight: 700;
+        }
+
+        details {
+            margin-top: 8px;
+        }
+
+        summary {
+            cursor: pointer;
+            color: var(--blue);
+            font-weight: 800;
+        }
+
+        pre {
+            max-height: 260px;
             overflow: auto;
-            font-family: Consolas, Monaco, 'Courier New', monospace;
-            font-size: 0.86em;
+            background: var(--dark);
+            color: #f8fafc;
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 0.78rem;
             line-height: 1.45;
             white-space: pre-wrap;
             word-break: break-word;
         }
 
-        .display-canvas-wrap {
-            background: #111827;
-            border: 2px solid #495057;
-            border-radius: 8px;
-            padding: 10px;
-            margin-bottom: 10px;
-            overflow: auto;
-        }
-
-        .display-canvas {
-            width: 256px;
-            height: 128px;
-            background: #000;
-            image-rendering: pixelated;
-            display: block;
-            cursor: crosshair;
-            touch-action: none;
-        }
-
-        .display-tools {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 8px;
-            margin-bottom: 10px;
-        }
-
-        .camera-preview-wrap {
-            background: #111827;
-            border: 2px solid #495057;
-            border-radius: 8px;
-            min-height: 190px;
+        .tabs {
             display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-            margin-bottom: 10px;
+            gap: 6px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
         }
 
-        .camera-preview {
+        .tab {
+            background: #fff;
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .tab.active {
+            background: var(--blue);
+            color: #fff;
+            border-color: var(--blue);
+        }
+
+        .tab-page {
+            display: none;
+        }
+
+        .tab-page.active {
+            display: block;
+        }
+
+        .motor-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 12px;
+        }
+
+        .motor-card {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+            background: var(--panel-soft);
+        }
+
+        .camera-frame {
             display: block;
             width: 100%;
-            max-height: 320px;
+            max-height: 280px;
             object-fit: contain;
+            background: var(--dark);
+            border-radius: 8px;
+            border: 1px solid var(--border);
         }
 
-        .camera-meta {
-            background: #f8f9fa;
-            border: 1px solid #e9ecef;
-            border-radius: 8px;
-            padding: 10px;
-            font-size: 0.86em;
-            color: #495057;
-            min-height: 42px;
-            word-break: break-word;
+        @media (max-width: 1100px) {
+            .layout,
+            .row {
+                grid-template-columns: 1fr;
+            }
+
+            .status-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .topbar {
+                align-items: stretch;
+                flex-direction: column;
+            }
         }
 
         @media (max-width: 600px) {
-            .header h1 {
-                font-size: 1.8em;
+            .app {
+                width: min(100vw - 20px, 1500px);
+                padding-top: 12px;
             }
 
-            .motors-grid {
+            .status-grid {
                 grid-template-columns: 1fr;
             }
 
-            .api-config {
+            .api-box {
                 flex-direction: column;
-            }
-
-            .status-indicator {
-                margin-left: 0;
-                margin-top: 10px;
-            }
-
-            .stepper-controls {
-                grid-template-columns: 1fr;
-            }
-
-            .button-group {
-                flex-direction: column;
-            }
-
-            .runtime-row {
-                grid-template-columns: 1fr;
-            }
-
-            .runtime-header {
-                align-items: flex-start;
-            }
-
-            .display-tools {
-                grid-template-columns: 1fr;
+                align-items: stretch;
             }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🎮 Motor Controller</h1>
-            <p>Control DC and Stepper Motors via REST API</p>
-        </div>
-
-        <div class="api-config">
-            <label for="api-host">API Host:</label>
-            <input type="text" id="api-host" value="localhost:5000" placeholder="localhost:5000">
-            <button onclick="updateApiConfig()">Update</button>
-            <div class="status-indicator">
-                <div class="status-dot" id="status-dot"></div>
-                <span id="status-text">Disconnected</span>
+    <main class="app">
+        <div class="topbar">
+            <div class="title">
+                <h1>PiBot Control</h1>
+                <p>Manual controls, supervised actions, AI decisions, and readable logs.</p>
+            </div>
+            <div class="api-box">
+                <label for="api-host" style="margin:0;">API Host</label>
+                <input id="api-host" type="text" value="localhost:5000">
+                <button class="secondary" onclick="updateApiConfig()">Connect</button>
             </div>
         </div>
 
-        <div class="error-message" id="error-message"></div>
+        <div id="error-message" class="banner"></div>
 
-        <section class="runtime-panel">
-            <div class="runtime-header">
-                <h2>Robot Runtime Tester</h2>
-                <div class="runtime-status">
-                    <span class="status-chip" id="chip-mode">Mode: --</span>
-                    <span class="status-chip" id="chip-estop">E-Stop: --</span>
-                    <span class="status-chip" id="chip-action">Action: --</span>
-                    <span class="status-chip" id="chip-sensors">Sensors: --</span>
-                    <span class="status-chip" id="chip-display">Display: --</span>
-                    <span class="status-chip" id="chip-camera">Camera: --</span>
-                    <span class="status-chip" id="chip-safety">Safety: --</span>
-                    <span class="status-chip" id="chip-ollama">Ollama: --</span>
-                    <span class="status-chip" id="chip-ai-loop">AI Loop: --</span>
-                </div>
-            </div>
+        <section class="status-grid">
+            <div class="chip" id="chip-connection"><span class="label">Connection</span><span class="value">--</span></div>
+            <div class="chip" id="chip-mode"><span class="label">Mode</span><span class="value">--</span></div>
+            <div class="chip" id="chip-estop"><span class="label">E-Stop</span><span class="value">--</span></div>
+            <div class="chip" id="chip-ai-loop"><span class="label">AI Loop</span><span class="value">--</span></div>
+            <div class="chip" id="chip-action"><span class="label">Action</span><span class="value">--</span></div>
+            <div class="chip" id="chip-camera"><span class="label">Camera</span><span class="value">--</span></div>
+            <div class="chip" id="chip-ollama"><span class="label">Ollama</span><span class="value">--</span></div>
+            <div class="chip" id="chip-safety"><span class="label">Safety</span><span class="value">--</span></div>
+        </section>
 
-            <div class="runtime-grid">
-                <div class="runtime-card">
-                    <h3>Goal</h3>
-                    <label for="runtime-goal">Operator Goal</label>
-                    <textarea id="runtime-goal" placeholder="explore slowly and avoid obstacles"></textarea>
-                    <div class="runtime-actions">
-                        <button class="btn btn-primary" onclick="setRobotGoal()">Set Goal</button>
-                        <button class="btn btn-primary" onclick="refreshRobotState()">Refresh State</button>
+        <div class="layout">
+            <aside class="stack">
+                <section class="panel">
+                    <h2>Goal And Mode</h2>
+                    <label for="runtime-goal">Goal</label>
+                    <textarea id="runtime-goal" placeholder="move slowly toward the doorway"></textarea>
+                    <div class="row">
+                        <div>
+                            <label for="runtime-mode">Mode</label>
+                            <select id="runtime-mode">
+                                <option value="manual">manual</option>
+                                <option value="paused">paused</option>
+                                <option value="ai">ai</option>
+                                <option value="estop">estop</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="loop-interval">Loop Interval ms</label>
+                            <input id="loop-interval" type="number" min="250" value="1000">
+                        </div>
                     </div>
-                </div>
-
-                <div class="runtime-card">
-                    <h3>Mode</h3>
-                    <label for="runtime-mode">Control Mode</label>
-                    <select id="runtime-mode">
-                        <option value="manual">Manual</option>
-                        <option value="paused">Paused</option>
-                        <option value="ai">AI</option>
-                        <option value="estop">E-Stop</option>
-                    </select>
-                    <div class="runtime-actions">
-                        <button class="btn btn-primary" onclick="setRobotMode()">Set Mode</button>
-                        <button class="btn btn-stop" onclick="activateEstop()">E-Stop</button>
-                        <button class="btn btn-backward" onclick="clearEstop()">Clear</button>
+                    <div class="actions">
+                        <button onclick="setRobotGoal()">Set Goal</button>
+                        <button class="secondary" onclick="setRobotMode()">Set Mode</button>
+                        <button class="danger" onclick="activateEstop()">E-Stop</button>
+                        <button class="secondary" onclick="clearEstop()">Clear</button>
                     </div>
-                </div>
+                </section>
 
-                <div class="runtime-card">
-                    <h3>Timed Drive</h3>
-                    <div class="runtime-row">
+                <section class="panel">
+                    <div class="panel-header">
+                        <h2>Autonomous AI Loop</h2>
+                        <span id="loop-state-pill" class="pill">Stopped</span>
+                    </div>
+                    <label class="check-row" for="loop-camera">
+                        <input id="loop-camera" type="checkbox" checked>
+                        Include camera
+                    </label>
+                    <label class="check-row" for="loop-execute">
+                        <input id="loop-execute" type="checkbox" checked>
+                        Execute actions
+                    </label>
+                    <div class="actions">
+                        <button class="good" onclick="startAiLoop()">Start Loop</button>
+                        <button class="danger" onclick="stopAiLoop()">Stop Loop</button>
+                        <button class="secondary" onclick="refreshAiStatus()">Status</button>
+                        <button class="danger" onclick="aiEstop()">AI E-Stop</button>
+                    </div>
+                    <div id="ai-loop-summary" class="summary-list" style="margin-top:12px;"></div>
+                </section>
+
+                <section class="panel">
+                    <h2>One-Shot Brain</h2>
+                    <label class="check-row" for="brain-camera">
+                        <input id="brain-camera" type="checkbox">
+                        Include camera
+                    </label>
+                    <div class="actions">
+                        <button onclick="ollamaDecide(false)">Decide</button>
+                        <button class="good" onclick="ollamaDecide(true)">Decide + Execute</button>
+                        <button class="secondary" onclick="ollamaTranslate(false)">Retry JSON</button>
+                        <button class="good" onclick="ollamaTranslate(true)">Retry JSON + Execute</button>
+                    </div>
+                    <div id="brain-summary" class="summary-list" style="margin-top:12px;"></div>
+                </section>
+
+                <section class="panel">
+                    <h2>Immediate Actions</h2>
+                    <div class="row">
                         <div>
                             <label for="drive-left">Left Power</label>
-                            <input type="number" id="drive-left" value="25" min="-100" max="100">
+                            <input id="drive-left" type="number" value="20" min="-100" max="100">
                         </div>
                         <div>
                             <label for="drive-right">Right Power</label>
-                            <input type="number" id="drive-right" value="25" min="-100" max="100">
+                            <input id="drive-right" type="number" value="20" min="-100" max="100">
                         </div>
                     </div>
                     <label for="drive-duration">Duration ms</label>
-                    <input type="number" id="drive-duration" value="300" min="1">
-                    <div class="runtime-actions">
-                        <button class="btn btn-forward" onclick="driveTankAction()">Drive</button>
-                        <button class="btn btn-stop" onclick="stopAllActions()">Stop All</button>
+                    <input id="drive-duration" type="number" value="300" min="1">
+                    <div class="actions">
+                        <button class="good" onclick="driveTankAction()">Drive</button>
+                        <button class="danger" onclick="stopAllActions()">Stop All</button>
                     </div>
-                </div>
-
-                <div class="runtime-card">
-                    <h3>Rotate</h3>
-                    <div class="runtime-row">
+                    <div class="row" style="margin-top:12px;">
                         <div>
-                            <label for="rotate-power">Power</label>
-                            <input type="number" id="rotate-power" value="25" min="1" max="100">
+                            <label for="rotate-power">Rotate Power</label>
+                            <input id="rotate-power" type="number" value="20" min="1" max="100">
                         </div>
                         <div>
                             <label for="rotate-direction">Direction</label>
                             <select id="rotate-direction">
-                                <option value="left">Left</option>
-                                <option value="right">Right</option>
-                                <option value="counterclockwise">Counterclockwise</option>
-                                <option value="clockwise">Clockwise</option>
+                                <option value="left">left</option>
+                                <option value="right">right</option>
                             </select>
                         </div>
                     </div>
-                    <label for="rotate-duration">Duration ms</label>
-                    <input type="number" id="rotate-duration" value="300" min="1">
-                    <div class="runtime-actions">
-                        <button class="btn btn-primary" onclick="rotateAction()">Rotate</button>
+                    <label for="rotate-duration">Rotate Duration ms</label>
+                    <input id="rotate-duration" type="number" value="250" min="1">
+                    <div class="actions">
+                        <button onclick="rotateAction()">Rotate</button>
                     </div>
-                </div>
+                </section>
+            </aside>
 
-                <div class="runtime-card">
-                    <h3>Sensor</h3>
-                    <div class="runtime-row">
-                        <div>
-                            <label for="sensor-name">Name</label>
-                            <input type="text" id="sensor-name" value="front_distance_cm">
+            <section class="stack">
+                <section class="panel">
+                    <div class="tabs">
+                        <button class="tab active" data-tab="overview" onclick="showTab('overview')">Overview</button>
+                        <button class="tab" data-tab="logs" onclick="showTab('logs')">AI Logs</button>
+                        <button class="tab" data-tab="hardware" onclick="showTab('hardware')">Hardware</button>
+                        <button class="tab" data-tab="state" onclick="showTab('state')">Diagnostics</button>
+                    </div>
+
+                    <div id="tab-overview" class="tab-page active">
+                        <div class="row">
+                            <section>
+                                <h2>Latest Decision</h2>
+                                <div id="latest-decision" class="summary-list"></div>
+                            </section>
+                            <section>
+                                <h2>Safety Result</h2>
+                                <div id="latest-safety" class="summary-list"></div>
+                            </section>
                         </div>
-                        <div>
-                            <label for="sensor-value">Value</label>
-                            <input type="text" id="sensor-value" value="85">
+                        <section style="margin-top:14px;">
+                            <h2>Recent Robot Events</h2>
+                            <div id="recent-events" class="summary-list"></div>
+                        </section>
+                    </div>
+
+                    <div id="tab-logs" class="tab-page">
+                        <div class="panel-header">
+                            <h2>Readable AI Logs</h2>
+                            <div class="actions" style="margin:0;">
+                                <button class="secondary" onclick="refreshOllamaLogs()">Refresh Logs</button>
+                            </div>
                         </div>
+                        <div id="log-list" class="summary-list"></div>
                     </div>
-                    <label for="sensor-stale">Stale After ms</label>
-                    <input type="number" id="sensor-stale" value="500" min="1">
-                    <div class="runtime-actions">
-                        <button class="btn btn-primary" onclick="updateSensor()">Update Sensor</button>
-                        <button class="btn btn-stop" onclick="clearSensor()">Clear Sensor</button>
-                    </div>
-                </div>
 
-                <div class="runtime-card">
-                    <h3>Stepper Action</h3>
-                    <label for="action-stepper-motor">Motor</label>
-                    <select id="action-stepper-motor"></select>
-                    <div class="runtime-row">
-                        <div>
-                            <label for="action-stepper-steps">Steps</label>
-                            <input type="number" id="action-stepper-steps" value="80" min="1">
+                    <div id="tab-hardware" class="tab-page">
+                        <div class="row">
+                            <section>
+                                <h2>OLED</h2>
+                                <label for="display-text">Text</label>
+                                <input id="display-text" type="text" value="PiBot online">
+                                <div class="actions">
+                                    <button onclick="sendDisplayText()">Send Text</button>
+                                    <button class="secondary" onclick="clearDisplay()">Clear</button>
+                                </div>
+                            </section>
+                            <section>
+                                <h2>Camera</h2>
+                                <img id="camera-preview" class="camera-frame" alt="Camera preview">
+                                <div class="actions">
+                                    <button onclick="refreshCameraPreview()">Snapshot</button>
+                                    <button class="secondary" onclick="captureCameraJson()">Capture Metadata</button>
+                                </div>
+                                <div id="camera-meta" class="summary-meta" style="margin-top:8px;">No capture yet.</div>
+                            </section>
                         </div>
-                        <div>
-                            <label for="action-stepper-direction">Direction</label>
-                            <select id="action-stepper-direction">
-                                <option value="forward">Forward</option>
-                                <option value="backward">Backward</option>
-                            </select>
+                        <section style="margin-top:14px;">
+                            <h2>Motors</h2>
+                            <div id="motors-container" class="motor-grid"></div>
+                        </section>
+                    </div>
+
+                    <div id="tab-state" class="tab-page">
+                        <div class="panel-header">
+                            <h2>Diagnostics</h2>
+                            <button class="secondary" onclick="refreshRobotState()">Refresh</button>
                         </div>
+                        <div id="diagnostics-summary" class="summary-list"></div>
+                        <details>
+                            <summary>Full state JSON</summary>
+                            <pre id="raw-state">No state loaded.</pre>
+                        </details>
                     </div>
-                    <div class="runtime-actions">
-                        <button class="btn btn-primary" onclick="stepperMoveAction()">Move Stepper</button>
-                    </div>
-                </div>
-
-                <div class="runtime-card">
-                    <h3>OLED Display</h3>
-                    <label for="display-text">Text</label>
-                    <input type="text" id="display-text" value="PiBot online">
-                    <div class="runtime-actions">
-                        <button class="btn btn-primary" onclick="sendDisplayText()">Send Text</button>
-                        <button class="btn btn-stop" onclick="clearDisplay()">Clear OLED</button>
-                    </div>
-
-                    <label>Pixel Canvas</label>
-                    <div class="display-canvas-wrap">
-                        <canvas id="display-canvas" class="display-canvas" width="128" height="64"></canvas>
-                    </div>
-                    <div class="display-tools">
-                        <button class="btn btn-primary" onclick="setDisplayDrawMode(1)">Draw</button>
-                        <button class="btn btn-backward" onclick="setDisplayDrawMode(0)">Erase</button>
-                        <button class="btn btn-stop" onclick="clearDisplayCanvas()">Clear Canvas</button>
-                    </div>
-                    <div class="runtime-actions">
-                        <button class="btn btn-forward" onclick="sendDisplayFrame()">Send Pixels</button>
-                    </div>
-                </div>
-
-                <div class="runtime-card">
-                    <h3>USB Camera</h3>
-                    <div class="camera-preview-wrap">
-                        <img id="camera-preview" class="camera-preview" alt="Camera snapshot preview">
-                    </div>
-                    <div class="runtime-actions">
-                        <button class="btn btn-primary" onclick="refreshCameraPreview()">Snapshot</button>
-                        <button class="btn btn-forward" onclick="captureCameraJson()">Capture JSON</button>
-                    </div>
-                    <div class="camera-meta" id="camera-meta">No camera capture yet.</div>
-                </div>
-
-                <div class="runtime-card state-card">
-                    <h3>Safety Supervisor</h3>
-                    <label for="proposal-json">Proposed Action JSON</label>
-                    <textarea id="proposal-json">{
-  "source": "ai",
-  "actions": [
-    {
-      "type": "drive_tank",
-      "left_power": 25,
-      "right_power": 25,
-      "duration_ms": 300
-    }
-  ]
-}</textarea>
-                    <div class="runtime-actions">
-                        <button class="btn btn-primary" onclick="setSafetyExample('drive')">Drive</button>
-                        <button class="btn btn-primary" onclick="setSafetyExample('rotate')">Rotate</button>
-                        <button class="btn btn-primary" onclick="setSafetyExample('stepper')">Stepper</button>
-                        <button class="btn btn-primary" onclick="setSafetyExample('display')">OLED</button>
-                        <button class="btn btn-primary" onclick="setSafetyExample('camera')">Camera</button>
-                        <button class="btn btn-stop" onclick="setSafetyExample('stop')">Stop</button>
-                    </div>
-                    <div class="runtime-actions" style="margin-top: 10px;">
-                        <button class="btn btn-forward" onclick="submitProposedActions()">Submit Proposal</button>
-                        <button class="btn btn-primary" onclick="refreshSafetyStatus()">Safety Status</button>
-                    </div>
-                    <pre class="state-json" id="safety-result-json">No safety result yet.</pre>
-                </div>
-
-                <div class="runtime-card state-card">
-                    <h3>Ollama Brain</h3>
-                    <label class="runtime-check" for="ollama-include-camera">
-                        <input type="checkbox" id="ollama-include-camera">
-                        Include camera frame
-                    </label>
-                    <div class="runtime-actions">
-                        <button class="btn btn-primary" onclick="refreshOllamaStatus()">Ollama Status</button>
-                        <button class="btn btn-primary" onclick="refreshOllamaLogs()">Logs</button>
-                        <button class="btn btn-primary" onclick="ollamaDecide(false)">Decide</button>
-                        <button class="btn btn-forward" onclick="ollamaDecide(true)">Decide + Execute</button>
-                        <button class="btn btn-primary" onclick="ollamaTranslate(false)">Retry JSON</button>
-                        <button class="btn btn-forward" onclick="ollamaTranslate(true)">Retry JSON + Execute</button>
-                    </div>
-                    <pre class="state-json" id="ollama-result-json">No Ollama result yet.</pre>
-                </div>
-
-                <div class="runtime-card state-card">
-                    <h3>Autonomous AI Loop</h3>
-                    <div class="runtime-row">
-                        <label class="runtime-check" for="ai-loop-include-camera">
-                            <input type="checkbox" id="ai-loop-include-camera" checked>
-                            Include camera
-                        </label>
-                        <label class="runtime-check" for="ai-loop-execute-actions">
-                            <input type="checkbox" id="ai-loop-execute-actions" checked>
-                            Execute actions
-                        </label>
-                    </div>
-                    <label for="ai-loop-interval">Minimum Decision Interval ms</label>
-                    <input type="number" id="ai-loop-interval" value="1000" min="250">
-                    <div class="runtime-actions">
-                        <button class="btn btn-forward" onclick="startAiLoop()">Start Loop</button>
-                        <button class="btn btn-stop" onclick="stopAiLoop()">Stop Loop</button>
-                        <button class="btn btn-primary" onclick="refreshAiStatus()">AI Status</button>
-                        <button class="btn btn-stop" onclick="aiEstop()">AI E-Stop</button>
-                    </div>
-                    <pre class="state-json" id="ai-loop-result-json">No AI loop result yet.</pre>
-                </div>
-
-                <div class="runtime-card state-card">
-                    <h3>Robot State</h3>
-                    <pre class="state-json" id="robot-state-json">No state loaded.</pre>
-                </div>
-            </div>
-        </section>
-
-        <div class="motors-grid" id="motors-container">
-            <p style="color: white; grid-column: 1 / -1; text-align: center;">Loading motors...</p>
+                </section>
+            </section>
         </div>
-
-        <div class="footer">
-            <p>Motor Control System for Raspberry Pi 3B+</p>
-        </div>
-    </div>
+    </main>
 
     <script>
-        let apiHost = 'http://localhost:5000';
+        let apiHost = '';
         let motors = {};
         let robotState = null;
-        let displayDrawMode = 1;
-        let displayDrawing = false;
-        let displayCanvas = null;
-        let displayCtx = null;
+        let latestDecisionPayload = null;
+        let latestSafetyPayload = null;
 
-        // Initialize
         document.addEventListener('DOMContentLoaded', () => {
-            setupDisplayCanvas();
-            loadMotors();
-            refreshRobotState();
-            setInterval(updateMotorStatus, 2000);
+            const hostInput = document.getElementById('api-host');
+            hostInput.value = window.location.host || 'localhost:5000';
+            updateApiConfig(false);
             setInterval(refreshRobotState, 2000);
+            setInterval(updateMotorStatus, 2500);
         });
 
-        function updateApiConfig() {
-            const host = document.getElementById('api-host').value;
-            if (!host) {
-                showError('Please enter a valid API host');
-                return;
+        function updateApiConfig(refresh = true) {
+            const host = document.getElementById('api-host').value.trim() || 'localhost:5000';
+            const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+            apiHost = `${protocol}//${host}`;
+            if (refresh) {
+                refreshRobotState();
+                loadMotors();
+            } else {
+                refreshRobotState();
+                loadMotors();
             }
-            apiHost = `http://${host}`;
-            loadMotors();
-            refreshRobotState();
-        }
-
-        async function loadMotors() {
-            try {
-                const response = await fetch(`${apiHost}/motors`);
-                if (!response.ok) throw new Error('Failed to connect to API');
-
-                motors = await response.json();
-                renderMotors();
-                populateStepperActionOptions();
-                updateConnectionStatus(true);
-                clearError();
-            } catch (error) {
-                console.error('Error loading motors:', error);
-                updateConnectionStatus(false);
-                showError(`Cannot connect to API at ${apiHost}`);
-            }
-        }
-
-        function renderMotors() {
-            const container = document.getElementById('motors-container');
-            container.innerHTML = '';
-
-            Object.entries(motors).forEach(([name, motor]) => {
-                const card = createMotorCard(name, motor);
-                container.appendChild(card);
-            });
         }
 
         async function apiRequest(path, options = {}) {
@@ -937,182 +714,264 @@
             }
 
             if (!response.ok) {
-                const message = payload && payload.error ? payload.error : `HTTP ${response.status}`;
-                throw new Error(message);
+                throw new Error(payload && payload.error ? payload.error : `HTTP ${response.status}`);
             }
-
             return payload;
+        }
+
+        function showTab(name) {
+            document.querySelectorAll('.tab').forEach((button) => {
+                button.classList.toggle('active', button.dataset.tab === name);
+            });
+            document.querySelectorAll('.tab-page').forEach((page) => {
+                page.classList.toggle('active', page.id === `tab-${name}`);
+            });
+            if (name === 'logs') refreshOllamaLogs();
         }
 
         async function refreshRobotState() {
             try {
                 robotState = await apiRequest('/robot/state');
                 renderRobotState();
-                updateConnectionStatus(true);
+                setChip('chip-connection', 'Connection', 'Connected', 'good');
                 clearError();
             } catch (error) {
-                console.error('Error refreshing robot state:', error);
-                updateConnectionStatus(false);
-                updateRuntimeChips(null);
+                setChip('chip-connection', 'Connection', 'Disconnected', 'danger');
+                renderDisconnected();
             }
         }
 
         function renderRobotState() {
-            const stateOutput = document.getElementById('robot-state-json');
-            if (stateOutput) {
-                stateOutput.textContent = JSON.stringify(robotState, null, 2);
-            }
+            if (!robotState || !robotState.robot) return;
+            const robot = robotState.robot;
+            const aiLoop = robot.ai_loop;
+            const ollama = robot.ollama;
+            const activeAction = robot.executor && robot.executor.active_action;
 
-            if (robotState && robotState.robot) {
-                const goalInput = document.getElementById('runtime-goal');
-                if (goalInput && !goalInput.matches(':focus')) {
-                    goalInput.value = robotState.robot.operator_goal || '';
-                }
+            setChip('chip-mode', 'Mode', robot.mode || '--', robot.mode === 'estop' ? 'danger' : robot.mode === 'ai' ? 'warn' : 'good');
+            setChip('chip-estop', 'E-Stop', robot.emergency_stop ? 'Active' : 'Clear', robot.emergency_stop ? 'danger' : 'good');
+            setChip('chip-ai-loop', 'AI Loop', aiLoop && aiLoop.running ? 'Running' : 'Stopped', aiLoop && aiLoop.running ? 'warn' : 'good');
+            setChip('chip-action', 'Action', activeAction ? activeAction.type : 'Idle', activeAction ? 'warn' : 'good');
+            setChip('chip-camera', 'Camera', robot.camera && robot.camera.available ? `${robot.camera.width || '--'}x${robot.camera.height || '--'}` : 'Unavailable', robot.camera && robot.camera.available ? 'good' : 'warn');
+            setChip('chip-ollama', 'Ollama', ollama && ollama.enabled ? (ollama.last_error ? 'Error' : 'Ready') : 'Disabled', ollama && ollama.enabled ? (ollama.last_error ? 'danger' : 'good') : 'warn');
+            setChip('chip-safety', 'Safety', robot.safety ? 'Ready' : 'Unavailable', robot.safety ? 'good' : 'warn');
 
-                const modeSelect = document.getElementById('runtime-mode');
-                if (modeSelect && !modeSelect.matches(':focus')) {
-                    modeSelect.value = robotState.robot.mode || 'manual';
-                }
-            }
+            const goalInput = document.getElementById('runtime-goal');
+            if (goalInput && !goalInput.matches(':focus')) goalInput.value = robot.operator_goal || '';
+            const modeSelect = document.getElementById('runtime-mode');
+            if (modeSelect && !modeSelect.matches(':focus')) modeSelect.value = robot.mode || 'manual';
 
-            updateRuntimeChips(robotState);
+            document.getElementById('raw-state').textContent = JSON.stringify(robotState, null, 2);
+            renderDiagnostics(robot);
+            renderAiLoopSummary(aiLoop);
+            renderLatestDecision(aiLoop && aiLoop.last_decision ? aiLoop.last_decision : latestDecisionPayload);
+            renderLatestSafety(aiLoop && aiLoop.last_safety_result ? aiLoop.last_safety_result : latestSafetyPayload);
+            renderRecentEvents(robotState.memory && robotState.memory.recent_actions ? robotState.memory.recent_actions : []);
         }
 
-        function updateRuntimeChips(state) {
-            const modeChip = document.getElementById('chip-mode');
-            const estopChip = document.getElementById('chip-estop');
-            const actionChip = document.getElementById('chip-action');
-            const sensorsChip = document.getElementById('chip-sensors');
-            const displayChip = document.getElementById('chip-display');
-            const cameraChip = document.getElementById('chip-camera');
-            const safetyChip = document.getElementById('chip-safety');
-            const ollamaChip = document.getElementById('chip-ollama');
-            const aiLoopChip = document.getElementById('chip-ai-loop');
+        function renderDiagnostics(robot) {
+            const container = document.getElementById('diagnostics-summary');
+            if (!container) return;
 
-            if (!state || !state.robot) {
-                setChip(modeChip, 'Mode: --');
-                setChip(estopChip, 'E-Stop: --');
-                setChip(actionChip, 'Action: --');
-                setChip(sensorsChip, 'Sensors: --');
-                setChip(displayChip, 'Display: --');
-                setChip(cameraChip, 'Camera: --');
-                setChip(safetyChip, 'Safety: --');
-                setChip(ollamaChip, 'Ollama: --');
-                setChip(aiLoopChip, 'AI Loop: --');
-                return;
-            }
+            const aiLoop = robot.ai_loop || {};
+            const ollama = robot.ollama || {};
+            const safety = robot.safety || {};
+            const requestLog = ollama.request_log || {};
+            const limits = safety.limits || {};
+            const rows = [
+                ['Robot mode', robot.mode || '--'],
+                ['Emergency stop', robot.emergency_stop ? 'active' : 'clear'],
+                ['AI loop', aiLoop.running ? 'running' : 'stopped'],
+                ['Loop interval', `${aiLoop.decision_interval_ms ?? '--'} ms`],
+                ['Goal', robot.operator_goal || '--'],
+                ['Ollama', ollama.enabled ? `${ollama.model || '--'} at ${ollama.url || '--'}` : 'disabled'],
+                ['Translator', ollama.two_stage ? `${ollama.translator_model || '--'} (${ollama.translator_timeout_ms ?? '--'} ms timeout)` : 'single-stage'],
+                ['Request log', requestLog.enabled ? requestLog.path || 'enabled' : 'disabled'],
+                ['Safety limits', `drive ${limits.max_drive_power ?? '--'}%, action ${limits.max_action_ms ?? '--'} ms, stepper ${limits.max_stepper_steps ?? '--'} steps`],
+                ['Last Ollama error', ollama.last_error || '--'],
+                ['Last loop error', aiLoop.last_error || '--'],
+            ];
 
-            const mode = state.robot.mode || '--';
-            const estop = Boolean(state.robot.emergency_stop);
-            const activeAction = state.robot.executor && state.robot.executor.active_action;
-            const sensorCount = state.sensors ? Object.keys(state.sensors).length : 0;
-            const display = state.robot.display;
-            const camera = state.robot.camera;
-            const safety = state.robot.safety;
-            const ollama = state.robot.ollama;
-            const aiLoop = state.robot.ai_loop;
-
-            setChip(modeChip, `Mode: ${mode}`, mode === 'ai' ? 'warn' : mode === 'estop' ? 'danger' : 'good');
-            setChip(estopChip, `E-Stop: ${estop ? 'Active' : 'Clear'}`, estop ? 'danger' : 'good');
-            setChip(actionChip, `Action: ${activeAction ? activeAction.type : 'Idle'}`, activeAction ? 'warn' : 'good');
-            setChip(sensorsChip, `Sensors: ${sensorCount}`, sensorCount > 0 ? 'good' : '');
-            setChip(
-                displayChip,
-                `Display: ${display && display.available ? 'Ready' : 'Unavailable'}`,
-                display && display.available ? 'good' : 'warn'
-            );
-            setChip(
-                cameraChip,
-                `Camera: ${camera && camera.available ? 'Ready' : 'Unavailable'}`,
-                camera && camera.available ? 'good' : 'warn'
-            );
-            setChip(
-                safetyChip,
-                `Safety: ${safety ? 'Ready' : 'Unavailable'}`,
-                safety ? 'good' : 'warn'
-            );
-            setChip(
-                ollamaChip,
-                `Ollama: ${ollama && ollama.enabled ? (ollama.last_error ? 'Error' : 'Ready') : 'Disabled'}`,
-                ollama && ollama.enabled ? (ollama.last_error ? 'danger' : 'good') : 'warn'
-            );
-            setChip(
-                aiLoopChip,
-                `AI Loop: ${aiLoop && aiLoop.running ? 'Running' : 'Stopped'}`,
-                aiLoop && aiLoop.running ? 'warn' : 'good'
-            );
+            container.innerHTML = `
+                <div class="summary-item">
+                    <div class="summary-title">System Snapshot</div>
+                    <div class="kv">
+                        ${rows.map(([label, value]) => `
+                            <div>${escapeHtml(label)}</div>
+                            <div>${escapeHtml(value)}</div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
         }
 
-        function setChip(element, text, tone = '') {
-            if (!element) return;
-            element.textContent = text;
-            element.className = `status-chip ${tone}`.trim();
+        function renderDisconnected() {
+            setChip('chip-mode', 'Mode', '--', '');
+            setChip('chip-estop', 'E-Stop', '--', '');
+            setChip('chip-ai-loop', 'AI Loop', '--', '');
+            setChip('chip-action', 'Action', '--', '');
+            setChip('chip-camera', 'Camera', '--', '');
+            setChip('chip-ollama', 'Ollama', '--', '');
+            setChip('chip-safety', 'Safety', '--', '');
         }
 
-        function populateStepperActionOptions() {
-            const select = document.getElementById('action-stepper-motor');
-            if (!select) return;
-
-            const currentValue = select.value;
-            const steppers = Object.entries(motors)
-                .filter(([, motor]) => motor.type === 'Stepper')
-                .map(([name]) => name);
-
-            select.innerHTML = '';
-
-            if (steppers.length === 0) {
-                const option = document.createElement('option');
-                option.value = '';
-                option.textContent = 'No stepper motors';
-                select.appendChild(option);
-                return;
-            }
-
-            steppers.forEach((name) => {
-                const option = document.createElement('option');
-                option.value = name;
-                option.textContent = name;
-                select.appendChild(option);
-            });
-
-            if (steppers.includes(currentValue)) {
-                select.value = currentValue;
-            }
-        }
-
-        function getNumberInput(id, fallback = 0) {
+        function setChip(id, label, value, tone = '') {
             const element = document.getElementById(id);
-            const value = Number(element ? element.value : fallback);
-            return Number.isFinite(value) ? value : fallback;
+            if (!element) return;
+            element.className = `chip ${tone}`.trim();
+            element.innerHTML = `<span class="label">${escapeHtml(label)}</span><span class="value">${escapeHtml(value)}</span>`;
         }
 
-        function parseSensorValue(rawValue) {
-            if (rawValue === 'true') return true;
-            if (rawValue === 'false') return false;
-            if (rawValue === 'null') return null;
-
-            const numberValue = Number(rawValue);
-            if (rawValue.trim() !== '' && Number.isFinite(numberValue)) {
-                return numberValue;
+        function renderAiLoopSummary(aiLoop) {
+            const container = document.getElementById('ai-loop-summary');
+            const pill = document.getElementById('loop-state-pill');
+            if (!aiLoop) {
+                container.innerHTML = emptyItem('AI loop status unavailable');
+                pill.textContent = 'Unavailable';
+                pill.className = 'pill warn';
+                return;
             }
 
+            pill.textContent = aiLoop.running ? 'Running' : 'Stopped';
+            pill.className = `pill ${aiLoop.running ? 'warn' : 'good'}`;
+            const cfg = aiLoop.config || {};
+            container.innerHTML = `
+                <div class="summary-item">
+                    <div class="kv">
+                        <div>Iterations</div><div>${escapeHtml(aiLoop.iteration ?? 0)}</div>
+                        <div>Errors</div><div>${escapeHtml(aiLoop.consecutive_errors ?? 0)}</div>
+                        <div>Interval</div><div>${escapeHtml(cfg.decision_interval_ms || '--')} ms</div>
+                        <div>Camera</div><div>${cfg.include_camera ? 'included' : 'off'}</div>
+                        <div>Execute</div><div>${cfg.execute_actions ? 'enabled' : 'disabled'}</div>
+                    </div>
+                    ${aiLoop.last_error ? `<div class="summary-text"><span class="pill danger">Last issue</span> ${escapeHtml(aiLoop.last_error)}</div>` : ''}
+                </div>
+            `;
+        }
+
+        function renderLatestDecision(decision) {
+            const container = document.getElementById('latest-decision');
+            if (!decision) {
+                container.innerHTML = emptyItem('No decision yet');
+                return;
+            }
+            container.innerHTML = renderDecisionCard(decision);
+        }
+
+        function renderLatestSafety(safety) {
+            const container = document.getElementById('latest-safety');
+            if (!safety) {
+                container.innerHTML = emptyItem('No safety result yet');
+                return;
+            }
+            container.innerHTML = renderSafetyCard(safety);
+        }
+
+        function renderDecisionCard(decision) {
+            const proposal = decision.proposal || {};
+            const actions = Array.isArray(proposal.actions) ? proposal.actions : [];
+            const intent = decision.intent || (decision.planning && decision.planning.intent) || '';
+            const fallback = decision.fallback_action;
+            return `
+                <div class="summary-item">
+                    <div class="summary-title">${escapeHtml(decision.mode || 'Decision')} ${decision.source ? `<span class="pill">${escapeHtml(decision.source)}</span>` : ''}</div>
+                    <div class="summary-meta">${escapeHtml(decision.duration_ms ?? '--')} ms | planner ${escapeHtml(decision.planner_model || decision.model || '--')} | translator ${escapeHtml(decision.translator_model || '--')}</div>
+                    ${intent ? `<div class="summary-text"><strong>Intent:</strong> ${escapeHtml(intent)}</div>` : ''}
+                    ${proposal.speech ? `<div class="summary-text"><strong>Speech:</strong> ${escapeHtml(proposal.speech)}</div>` : ''}
+                    ${fallback ? `<div class="pill-list"><span class="pill warn">Fallback action applied</span></div>` : ''}
+                    ${renderActionPills(actions)}
+                    ${rawDetails(decision)}
+                </div>
+            `;
+        }
+
+        function renderSafetyCard(safety) {
+            const results = Array.isArray(safety.results) ? safety.results : [];
+            if (results.length === 0) {
+                return `
+                    <div class="summary-item">
+                        <div class="summary-title">No actions submitted</div>
+                        <div class="summary-meta">The proposal had an empty action list.</div>
+                        ${rawDetails(safety)}
+                    </div>
+                `;
+            }
+            return results.map((result) => {
+                const tone = result.decision === 'approved' ? 'good' : result.decision === 'clamped' ? 'warn' : 'danger';
+                return `
+                    <div class="summary-item">
+                        <div class="summary-title">
+                            <span class="pill ${tone}">${escapeHtml(result.decision || '--')}</span>
+                            ${escapeHtml(actionSummary(result.action || {}))}
+                        </div>
+                        <div class="summary-meta">${result.executed ? 'executed' : 'not executed'} | ${escapeHtml(result.reason || '')}</div>
+                    </div>
+                `;
+            }).join('') + rawDetails(safety);
+        }
+
+        function renderRecentEvents(events) {
+            const container = document.getElementById('recent-events');
+            const recent = events.slice(-8).reverse();
+            if (recent.length === 0) {
+                container.innerHTML = emptyItem('No recent events');
+                return;
+            }
+            container.innerHTML = recent.map((event) => `
+                <div class="summary-item">
+                    <div class="summary-title">${escapeHtml(event.source || '--')} <span class="pill">${escapeHtml(event.result || '--')}</span></div>
+                    <div class="summary-meta">${escapeHtml(formatTime(event.timestamp))}</div>
+                    <div class="summary-text">${escapeHtml(actionSummary(event.action || {}))}</div>
+                </div>
+            `).join('');
+        }
+
+        async function refreshOllamaLogs() {
             try {
-                return JSON.parse(rawValue);
+                const result = await apiRequest('/ollama/logs?limit=40');
+                renderLogList(result.entries || []);
+                clearError();
             } catch (error) {
-                return rawValue;
+                showError(`Failed to refresh logs: ${error.message}`);
             }
+        }
+
+        function renderLogList(entries) {
+            const container = document.getElementById('log-list');
+            if (!entries.length) {
+                container.innerHTML = emptyItem('No AI logs available');
+                return;
+            }
+            container.innerHTML = entries.slice().reverse().map((entry) => {
+                const proposal = entry.proposal || {};
+                const actions = Array.isArray(proposal.actions) ? proposal.actions : [];
+                const responseContent = entry.response && entry.response.message ? entry.response.message.content : '';
+                const tone = entry.status === 'success' ? 'good' : 'danger';
+                return `
+                    <div class="summary-item">
+                        <div class="summary-title">
+                            <span class="pill ${tone}">${escapeHtml(entry.status || '--')}</span>
+                            ${escapeHtml(entry.event || '--')}
+                            ${entry.fallback_action ? '<span class="pill warn">fallback</span>' : ''}
+                        </div>
+                        <div class="summary-meta">#${escapeHtml(entry.request_id || '--')} | ${escapeHtml(formatTime(entry.request_at))} | ${escapeHtml(entry.duration_ms ?? '--')} ms | ${escapeHtml(entry.model || '--')}</div>
+                        ${entry.intent ? `<div class="summary-text"><strong>Intent:</strong> ${escapeHtml(entry.intent)}</div>` : ''}
+                        ${responseContent ? `<div class="summary-text"><strong>Model:</strong> ${escapeHtml(truncate(responseContent, 420))}</div>` : ''}
+                        ${entry.error ? `<div class="summary-text"><span class="pill danger">Error</span> ${escapeHtml(entry.error)}</div>` : ''}
+                        ${renderActionPills(actions)}
+                        ${entry.fallback_action ? `<div class="summary-text"><strong>Fallback:</strong> ${escapeHtml(actionSummary(entry.fallback_action))}</div>` : ''}
+                        ${rawDetails(entry)}
+                    </div>
+                `;
+            }).join('');
         }
 
         async function setRobotGoal() {
             const goal = document.getElementById('runtime-goal').value;
             try {
-                await apiRequest('/robot/goal', {
-                    method: 'POST',
-                    body: JSON.stringify({ goal })
-                });
+                await apiRequest('/robot/goal', { method: 'POST', body: JSON.stringify({ goal }) });
                 await refreshRobotState();
             } catch (error) {
-                console.error('Error setting goal:', error);
                 showError(`Failed to set goal: ${error.message}`);
             }
         }
@@ -1120,29 +979,21 @@
         async function setRobotMode() {
             const mode = document.getElementById('runtime-mode').value;
             try {
-                await apiRequest('/robot/mode', {
-                    method: 'POST',
-                    body: JSON.stringify({ mode })
-                });
+                await apiRequest('/robot/mode', { method: 'POST', body: JSON.stringify({ mode }) });
                 await refreshRobotState();
                 await updateMotorStatus();
             } catch (error) {
-                console.error('Error setting mode:', error);
                 showError(`Failed to set mode: ${error.message}`);
             }
         }
 
         async function activateEstop() {
             try {
-                await apiRequest('/robot/estop', {
-                    method: 'POST',
-                    body: JSON.stringify({ reason: 'runtime tester' })
-                });
+                await apiRequest('/robot/estop', { method: 'POST', body: JSON.stringify({ reason: 'web control' }) });
                 await refreshRobotState();
                 await updateMotorStatus();
             } catch (error) {
-                console.error('Error activating emergency stop:', error);
-                showError(`Failed to activate emergency stop: ${error.message}`);
+                showError(`Failed to activate E-stop: ${error.message}`);
             }
         }
 
@@ -1151,52 +1002,140 @@
                 await apiRequest('/robot/estop/clear', { method: 'POST' });
                 await refreshRobotState();
             } catch (error) {
-                console.error('Error clearing emergency stop:', error);
-                showError(`Failed to clear emergency stop: ${error.message}`);
+                showError(`Failed to clear E-stop: ${error.message}`);
+            }
+        }
+
+        async function startAiLoop() {
+            const goal = document.getElementById('runtime-goal').value;
+            if (!goal.trim()) {
+                showError('Set a goal before starting the loop');
+                return;
+            }
+            try {
+                const result = await apiRequest('/ai/start', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        goal,
+                        include_camera: Boolean(document.getElementById('loop-camera').checked),
+                        execute_actions: Boolean(document.getElementById('loop-execute').checked),
+                        decision_interval_ms: getNumberInput('loop-interval', 1000),
+                        set_ai_mode: true
+                    })
+                });
+                renderAiLoopSummary(result);
+                await refreshRobotState();
+            } catch (error) {
+                showError(`Failed to start loop: ${error.message}`);
+            }
+        }
+
+        async function stopAiLoop() {
+            try {
+                const result = await apiRequest('/ai/stop', { method: 'POST', body: JSON.stringify({ stop_motors: true }) });
+                renderAiLoopSummary(result);
+                await refreshRobotState();
+                await updateMotorStatus();
+            } catch (error) {
+                showError(`Failed to stop loop: ${error.message}`);
+            }
+        }
+
+        async function refreshAiStatus() {
+            try {
+                const result = await apiRequest('/ai/status');
+                renderAiLoopSummary(result);
+                await refreshRobotState();
+            } catch (error) {
+                showError(`Failed to refresh AI status: ${error.message}`);
+            }
+        }
+
+        async function aiEstop() {
+            try {
+                const result = await apiRequest('/ai/estop', { method: 'POST', body: JSON.stringify({ reason: 'web AI E-stop' }) });
+                latestSafetyPayload = result.stop || null;
+                await refreshRobotState();
+                await updateMotorStatus();
+            } catch (error) {
+                showError(`Failed to activate AI E-stop: ${error.message}`);
+            }
+        }
+
+        async function ollamaDecide(execute) {
+            const goal = document.getElementById('runtime-goal').value;
+            if (execute && !goal.trim()) {
+                showError('Set a goal before Decide + Execute');
+                return;
+            }
+            try {
+                const result = await apiRequest('/ollama/decide', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        execute,
+                        include_camera: Boolean(document.getElementById('brain-camera').checked),
+                        goal
+                    })
+                });
+                latestDecisionPayload = result.decision;
+                latestSafetyPayload = result.safety || null;
+                document.getElementById('brain-summary').innerHTML = renderDecisionCard(result.decision);
+                renderLatestSafety(latestSafetyPayload);
+                await refreshRobotState();
+                await updateMotorStatus();
+            } catch (error) {
+                showError(`Failed to decide: ${error.message}`);
+            }
+        }
+
+        async function ollamaTranslate(execute) {
+            try {
+                const result = await apiRequest('/ollama/translate', {
+                    method: 'POST',
+                    body: JSON.stringify({ execute })
+                });
+                latestDecisionPayload = result.decision;
+                latestSafetyPayload = result.safety || null;
+                document.getElementById('brain-summary').innerHTML = renderDecisionCard(result.decision);
+                renderLatestSafety(latestSafetyPayload);
+                await refreshRobotState();
+                await updateMotorStatus();
+            } catch (error) {
+                showError(`Failed to retry JSON: ${error.message}`);
             }
         }
 
         async function driveTankAction() {
-            const leftPower = getNumberInput('drive-left');
-            const rightPower = getNumberInput('drive-right');
-            const durationMs = getNumberInput('drive-duration', 300);
-
             try {
                 await apiRequest('/actions/drive_tank', {
                     method: 'POST',
                     body: JSON.stringify({
-                        left_power: leftPower,
-                        right_power: rightPower,
-                        duration_ms: durationMs
+                        left_power: getNumberInput('drive-left', 20),
+                        right_power: getNumberInput('drive-right', 20),
+                        duration_ms: getNumberInput('drive-duration', 300)
                     })
                 });
                 await refreshRobotState();
                 await updateMotorStatus();
             } catch (error) {
-                console.error('Error driving tank:', error);
-                showError(`Failed to drive chassis: ${error.message}`);
+                showError(`Failed to drive: ${error.message}`);
             }
         }
 
         async function rotateAction() {
-            const power = getNumberInput('rotate-power', 25);
-            const durationMs = getNumberInput('rotate-duration', 300);
-            const direction = document.getElementById('rotate-direction').value;
-
             try {
                 await apiRequest('/actions/rotate', {
                     method: 'POST',
                     body: JSON.stringify({
-                        power,
-                        direction,
-                        duration_ms: durationMs
+                        power: getNumberInput('rotate-power', 20),
+                        direction: document.getElementById('rotate-direction').value,
+                        duration_ms: getNumberInput('rotate-duration', 250)
                     })
                 });
                 await refreshRobotState();
                 await updateMotorStatus();
             } catch (error) {
-                console.error('Error rotating:', error);
-                showError(`Failed to rotate chassis: ${error.message}`);
+                showError(`Failed to rotate: ${error.message}`);
             }
         }
 
@@ -1206,795 +1145,190 @@
                 await refreshRobotState();
                 await updateMotorStatus();
             } catch (error) {
-                console.error('Error stopping all:', error);
-                showError(`Failed to stop all motors: ${error.message}`);
+                showError(`Failed to stop motors: ${error.message}`);
             }
-        }
-
-        async function updateSensor() {
-            const name = document.getElementById('sensor-name').value.trim();
-            const rawValue = document.getElementById('sensor-value').value;
-            const staleAfterMs = getNumberInput('sensor-stale', 500);
-
-            if (!name) {
-                showError('Sensor name is required');
-                return;
-            }
-
-            try {
-                await apiRequest(`/robot/sensors/${encodeURIComponent(name)}`, {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        value: parseSensorValue(rawValue),
-                        stale_after_ms: staleAfterMs
-                    })
-                });
-                await refreshRobotState();
-            } catch (error) {
-                console.error('Error updating sensor:', error);
-                showError(`Failed to update sensor: ${error.message}`);
-            }
-        }
-
-        async function clearSensor() {
-            const name = document.getElementById('sensor-name').value.trim();
-            if (!name) {
-                showError('Sensor name is required');
-                return;
-            }
-
-            try {
-                await apiRequest(`/robot/sensors/${encodeURIComponent(name)}`, {
-                    method: 'DELETE'
-                });
-                await refreshRobotState();
-            } catch (error) {
-                console.error('Error clearing sensor:', error);
-                showError(`Failed to clear sensor: ${error.message}`);
-            }
-        }
-
-        async function stepperMoveAction() {
-            const motor = document.getElementById('action-stepper-motor').value;
-            const steps = Math.floor(getNumberInput('action-stepper-steps', 80));
-            const direction = document.getElementById('action-stepper-direction').value;
-
-            if (!motor) {
-                showError('No stepper motor selected');
-                return;
-            }
-
-            try {
-                await apiRequest('/actions/stepper_move', {
-                    method: 'POST',
-                    body: JSON.stringify({ motor, steps, direction })
-                });
-                await refreshRobotState();
-                await updateMotorStatus();
-            } catch (error) {
-                console.error('Error moving stepper:', error);
-                showError(`Failed to move stepper: ${error.message}`);
-            }
-        }
-
-        function setupDisplayCanvas() {
-            displayCanvas = document.getElementById('display-canvas');
-            if (!displayCanvas) return;
-
-            displayCtx = displayCanvas.getContext('2d', { willReadFrequently: true });
-            displayCtx.imageSmoothingEnabled = false;
-            clearDisplayCanvas();
-
-            displayCanvas.addEventListener('pointerdown', (event) => {
-                displayDrawing = true;
-                drawDisplayPixel(event);
-            });
-            displayCanvas.addEventListener('pointermove', (event) => {
-                if (displayDrawing) drawDisplayPixel(event);
-            });
-            window.addEventListener('pointerup', () => {
-                displayDrawing = false;
-            });
-            displayCanvas.addEventListener('pointerleave', () => {
-                displayDrawing = false;
-            });
-        }
-
-        function setDisplayDrawMode(mode) {
-            displayDrawMode = mode ? 1 : 0;
-        }
-
-        function drawDisplayPixel(event) {
-            if (!displayCanvas || !displayCtx) return;
-
-            const rect = displayCanvas.getBoundingClientRect();
-            const scaleX = displayCanvas.width / rect.width;
-            const scaleY = displayCanvas.height / rect.height;
-            const x = Math.floor((event.clientX - rect.left) * scaleX);
-            const y = Math.floor((event.clientY - rect.top) * scaleY);
-
-            if (x < 0 || y < 0 || x >= displayCanvas.width || y >= displayCanvas.height) {
-                return;
-            }
-
-            displayCtx.fillStyle = displayDrawMode ? '#ffffff' : '#000000';
-            displayCtx.fillRect(x, y, 1, 1);
-        }
-
-        function clearDisplayCanvas() {
-            if (!displayCtx && displayCanvas) {
-                displayCtx = displayCanvas.getContext('2d', { willReadFrequently: true });
-            }
-            if (!displayCanvas || !displayCtx) return;
-
-            displayCtx.fillStyle = '#000000';
-            displayCtx.fillRect(0, 0, displayCanvas.width, displayCanvas.height);
-        }
-
-        function canvasToRows() {
-            if (!displayCanvas || !displayCtx) return [];
-
-            const image = displayCtx.getImageData(0, 0, displayCanvas.width, displayCanvas.height);
-            const rows = [];
-
-            for (let y = 0; y < displayCanvas.height; y += 1) {
-                let row = '';
-                for (let x = 0; x < displayCanvas.width; x += 1) {
-                    const index = (y * displayCanvas.width + x) * 4;
-                    const brightness = image.data[index] + image.data[index + 1] + image.data[index + 2];
-                    row += brightness > 0 ? '1' : '0';
-                }
-                rows.push(row);
-            }
-
-            return rows;
         }
 
         async function sendDisplayText() {
-            const text = document.getElementById('display-text').value;
             try {
                 await apiRequest('/display/text', {
                     method: 'POST',
-                    body: JSON.stringify({ text, x: 0, y: 0, clear: true })
+                    body: JSON.stringify({ text: document.getElementById('display-text').value, x: 0, y: 0, clear: true })
                 });
                 await refreshRobotState();
             } catch (error) {
-                console.error('Error sending display text:', error);
-                showError(`Failed to send display text: ${error.message}`);
+                showError(`Failed to update display: ${error.message}`);
             }
         }
 
         async function clearDisplay() {
             try {
                 await apiRequest('/display/clear', { method: 'POST' });
-                clearDisplayCanvas();
                 await refreshRobotState();
             } catch (error) {
-                console.error('Error clearing display:', error);
                 showError(`Failed to clear display: ${error.message}`);
-            }
-        }
-
-        async function sendDisplayFrame() {
-            try {
-                await apiRequest('/display/frame', {
-                    method: 'POST',
-                    body: JSON.stringify({ rows: canvasToRows() })
-                });
-                await refreshRobotState();
-            } catch (error) {
-                console.error('Error sending display frame:', error);
-                showError(`Failed to send display pixels: ${error.message}`);
             }
         }
 
         async function refreshCameraPreview() {
             const preview = document.getElementById('camera-preview');
-            const meta = document.getElementById('camera-meta');
-            if (!preview) return;
-
             try {
-                const snapshotUrl = `${apiHost}/camera/snapshot.jpg?ts=${Date.now()}`;
+                preview.src = `${apiHost}/camera/snapshot.jpg?ts=${Date.now()}`;
                 await new Promise((resolve, reject) => {
                     preview.onload = resolve;
-                    preview.onerror = () => reject(new Error('camera snapshot failed'));
-                    preview.src = snapshotUrl;
+                    preview.onerror = () => reject(new Error('snapshot failed'));
                 });
-                if (meta) {
-                    meta.textContent = `Snapshot loaded at ${new Date().toLocaleTimeString()}`;
-                }
+                document.getElementById('camera-meta').textContent = `Snapshot ${new Date().toLocaleTimeString()}`;
                 await refreshRobotState();
-                clearError();
             } catch (error) {
-                console.error('Error refreshing camera preview:', error);
-                showError(`Failed to refresh camera preview: ${error.message}`);
+                showError(`Failed to load camera: ${error.message}`);
             }
         }
 
         async function captureCameraJson() {
-            const meta = document.getElementById('camera-meta');
             try {
                 const result = await apiRequest('/camera/capture', { method: 'POST' });
-                if (meta && result.frame) {
-                    meta.textContent = `Captured ${result.frame.width}x${result.frame.height}, ${result.frame.bytes} bytes at ${result.frame.captured_at}`;
-                }
+                const frame = result.frame || {};
+                document.getElementById('camera-meta').textContent = `${frame.width || '--'}x${frame.height || '--'}, ${frame.bytes || '--'} bytes`;
                 await refreshRobotState();
-                clearError();
             } catch (error) {
-                console.error('Error capturing camera JSON:', error);
-                showError(`Failed to capture camera JSON: ${error.message}`);
+                showError(`Failed to capture camera metadata: ${error.message}`);
             }
         }
 
-        function setSafetyExample(kind) {
-            const examples = {
-                drive: {
-                    source: 'ai',
-                    actions: [
-                        {
-                            type: 'drive_tank',
-                            left_power: 25,
-                            right_power: 25,
-                            duration_ms: 300
-                        }
-                    ]
-                },
-                rotate: {
-                    source: 'ai',
-                    actions: [
-                        {
-                            type: 'rotate',
-                            power: 25,
-                            direction: 'left',
-                            duration_ms: 300
-                        }
-                    ]
-                },
-                stepper: {
-                    source: 'ai',
-                    actions: [
-                        {
-                            type: 'stepper_move',
-                            motor: 'stepper_1',
-                            steps: 80,
-                            direction: 'forward'
-                        }
-                    ]
-                },
-                display: {
-                    source: 'ai',
-                    actions: [
-                        {
-                            type: 'display_text',
-                            text: 'AI online',
-                            x: 0,
-                            y: 0,
-                            clear: true
-                        }
-                    ]
-                },
-                camera: {
-                    source: 'ai',
-                    actions: [
-                        {
-                            type: 'camera_capture'
-                        }
-                    ]
-                },
-                stop: {
-                    source: 'ai',
-                    actions: [
-                        {
-                            type: 'stop_all'
-                        }
-                    ]
-                }
-            };
-
-            const input = document.getElementById('proposal-json');
-            if (input && examples[kind]) {
-                input.value = JSON.stringify(examples[kind], null, 2);
-            }
-        }
-
-        async function submitProposedActions() {
-            const input = document.getElementById('proposal-json');
-            const output = document.getElementById('safety-result-json');
+        async function loadMotors() {
             try {
-                const payload = JSON.parse(input.value);
-                const result = await apiRequest('/actions/propose', {
-                    method: 'POST',
-                    body: JSON.stringify(payload)
-                });
-                if (output) {
-                    output.textContent = JSON.stringify(result, null, 2);
-                }
-                await refreshRobotState();
-                await updateMotorStatus();
-                clearError();
+                motors = await apiRequest('/motors');
+                renderMotors();
             } catch (error) {
-                console.error('Error submitting proposed actions:', error);
-                showError(`Failed to submit proposal: ${error.message}`);
-            }
-        }
-
-        async function refreshSafetyStatus() {
-            const output = document.getElementById('safety-result-json');
-            try {
-                const result = await apiRequest('/safety/status');
-                if (output) {
-                    output.textContent = JSON.stringify(result, null, 2);
-                }
-                clearError();
-            } catch (error) {
-                console.error('Error refreshing safety status:', error);
-                showError(`Failed to refresh safety status: ${error.message}`);
-            }
-        }
-
-        async function refreshOllamaStatus() {
-            const output = document.getElementById('ollama-result-json');
-            try {
-                const result = await apiRequest('/ollama/status');
-                if (output) {
-                    output.textContent = JSON.stringify(result, null, 2);
-                }
-                await refreshRobotState();
-                clearError();
-            } catch (error) {
-                console.error('Error refreshing Ollama status:', error);
-                showError(`Failed to refresh Ollama status: ${error.message}`);
-            }
-        }
-
-        async function refreshOllamaLogs() {
-            const output = document.getElementById('ollama-result-json');
-            try {
-                const result = await apiRequest('/ollama/logs?limit=25');
-                if (output) {
-                    output.textContent = JSON.stringify(result, null, 2);
-                }
-                clearError();
-            } catch (error) {
-                console.error('Error refreshing Ollama logs:', error);
-                showError(`Failed to refresh Ollama logs: ${error.message}`);
-            }
-        }
-
-        async function ollamaDecide(execute) {
-            const output = document.getElementById('ollama-result-json');
-            const includeCamera = Boolean(document.getElementById('ollama-include-camera')?.checked);
-            const goalInput = document.getElementById('runtime-goal');
-            const goal = goalInput ? goalInput.value : '';
-
-            if (execute && !goal.trim()) {
-                showError('Set an operator goal before using Decide + Execute');
-                return;
-            }
-
-            try {
-                if (output) {
-                    output.textContent = 'Waiting for Ollama...';
-                }
-                const result = await apiRequest('/ollama/decide', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        execute,
-                        include_camera: includeCamera,
-                        goal
-                    })
-                });
-                if (output) {
-                    output.textContent = JSON.stringify(result, null, 2);
-                }
-
-                const proposalInput = document.getElementById('proposal-json');
-                const actions = result.decision && result.decision.proposal
-                    ? result.decision.proposal.actions
-                    : null;
-                if (proposalInput && Array.isArray(actions)) {
-                    proposalInput.value = JSON.stringify({ source: 'ai', actions }, null, 2);
-                }
-
-                await refreshRobotState();
-                await updateMotorStatus();
-                clearError();
-            } catch (error) {
-                console.error('Error asking Ollama for a decision:', error);
-                if (output) {
-                    output.textContent = JSON.stringify({ status: 'error', error: error.message }, null, 2);
-                }
-                showError(`Failed to get Ollama decision: ${error.message}`);
-            }
-        }
-
-        async function ollamaTranslate(execute) {
-            const output = document.getElementById('ollama-result-json');
-
-            try {
-                if (output) {
-                    output.textContent = 'Retrying JSON translation...';
-                }
-                const result = await apiRequest('/ollama/translate', {
-                    method: 'POST',
-                    body: JSON.stringify({ execute })
-                });
-                if (output) {
-                    output.textContent = JSON.stringify(result, null, 2);
-                }
-
-                const proposalInput = document.getElementById('proposal-json');
-                const actions = result.decision && result.decision.proposal
-                    ? result.decision.proposal.actions
-                    : null;
-                if (proposalInput && Array.isArray(actions)) {
-                    proposalInput.value = JSON.stringify({ source: 'ai', actions }, null, 2);
-                }
-
-                await refreshRobotState();
-                await updateMotorStatus();
-                clearError();
-            } catch (error) {
-                console.error('Error retrying Ollama JSON translation:', error);
-                if (output) {
-                    output.textContent = JSON.stringify({ status: 'error', error: error.message }, null, 2);
-                }
-                showError(`Failed to retry JSON translation: ${error.message}`);
-            }
-        }
-
-        async function refreshAiStatus() {
-            const output = document.getElementById('ai-loop-result-json');
-            try {
-                const result = await apiRequest('/ai/status');
-                if (output) {
-                    output.textContent = JSON.stringify(result, null, 2);
-                }
-                await refreshRobotState();
-                clearError();
-            } catch (error) {
-                console.error('Error refreshing AI loop status:', error);
-                showError(`Failed to refresh AI loop status: ${error.message}`);
-            }
-        }
-
-        async function startAiLoop() {
-            const output = document.getElementById('ai-loop-result-json');
-            const goalInput = document.getElementById('runtime-goal');
-            const goal = goalInput ? goalInput.value : '';
-            const includeCamera = Boolean(document.getElementById('ai-loop-include-camera')?.checked);
-            const executeActions = Boolean(document.getElementById('ai-loop-execute-actions')?.checked);
-            const decisionIntervalMs = Math.floor(getNumberInput('ai-loop-interval', 1000));
-
-            if (!goal.trim()) {
-                showError('Set an operator goal before starting the AI loop');
-                return;
-            }
-
-            try {
-                if (output) {
-                    output.textContent = 'Starting AI loop...';
-                }
-                const result = await apiRequest('/ai/start', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        goal,
-                        include_camera: includeCamera,
-                        execute_actions: executeActions,
-                        decision_interval_ms: decisionIntervalMs,
-                        set_ai_mode: true
-                    })
-                });
-                if (output) {
-                    output.textContent = JSON.stringify(result, null, 2);
-                }
-                await refreshRobotState();
-                clearError();
-            } catch (error) {
-                console.error('Error starting AI loop:', error);
-                if (output) {
-                    output.textContent = JSON.stringify({ status: 'error', error: error.message }, null, 2);
-                }
-                showError(`Failed to start AI loop: ${error.message}`);
-            }
-        }
-
-        async function stopAiLoop() {
-            const output = document.getElementById('ai-loop-result-json');
-            try {
-                const result = await apiRequest('/ai/stop', {
-                    method: 'POST',
-                    body: JSON.stringify({ stop_motors: true })
-                });
-                if (output) {
-                    output.textContent = JSON.stringify(result, null, 2);
-                }
-                await refreshRobotState();
-                await updateMotorStatus();
-                clearError();
-            } catch (error) {
-                console.error('Error stopping AI loop:', error);
-                showError(`Failed to stop AI loop: ${error.message}`);
-            }
-        }
-
-        async function aiEstop() {
-            const output = document.getElementById('ai-loop-result-json');
-            try {
-                const result = await apiRequest('/ai/estop', {
-                    method: 'POST',
-                    body: JSON.stringify({ reason: 'ai loop tester' })
-                });
-                if (output) {
-                    output.textContent = JSON.stringify(result, null, 2);
-                }
-                await refreshRobotState();
-                await updateMotorStatus();
-                clearError();
-            } catch (error) {
-                console.error('Error activating AI emergency stop:', error);
-                showError(`Failed to activate AI emergency stop: ${error.message}`);
-            }
-        }
-
-        function createMotorCard(name, motor) {
-            const card = document.createElement('div');
-            card.className = 'motor-card';
-
-            if (motor.type === 'DC') {
-                card.innerHTML = `
-                    <h2>⚙️ ${name}</h2>
-                    <div class="motor-type">DC Motor</div>
-
-                    <div class="control-group">
-                        <label>Power (-100 to 100)</label>
-                        <div class="slider-container">
-                            <input type="range" min="-100" max="100" value="0"
-                                   class="motor-power" data-motor="${name}">
-                            <div class="slider-value" id="power-${name}">0%</div>
-                        </div>
-                    </div>
-
-                    <div class="button-group">
-                        <button class="btn btn-forward" onclick="setMotorPower('${name}', 100)">
-                            ➡️ Full Forward
-                        </button>
-                        <button class="btn btn-stop" onclick="setMotorPower('${name}', 0)">
-                            ⏹️ Stop
-                        </button>
-                        <button class="btn btn-backward" onclick="setMotorPower('${name}', -100)">
-                            ⬅️ Full Backward
-                        </button>
-                    </div>
-
-                    <div class="status-display">
-                        Direction: <span id="dir-${name}">${motor.direction}</span>
-                    </div>
-                `;
-
-                // Add power slider listener
-                setTimeout(() => {
-                    const slider = card.querySelector('.motor-power');
-                    if (slider) {
-                        slider.addEventListener('input', (e) => {
-                            const power = e.target.value;
-                            updatePowerDisplay(name, parseInt(power));
-                            setMotorPower(name, parseInt(power));
-                        });
-                    }
-                }, 0);
-            } else if (motor.type === 'Stepper') {
-                card.innerHTML = `
-                    <h2>🔄 ${name}</h2>
-                    <div class="motor-type">Stepper Motor (28BYJ-48)</div>
-
-                    <div class="control-group">
-                        <label>Speed (RPM)</label>
-                        <div class="slider-container">
-                            <input type="range" min="0" max="50" value="${motor.rpm || 10}"
-                                   class="stepper-rpm" data-motor="${name}">
-                            <div class="slider-value" id="rpm-${name}">${motor.rpm || 10} RPM</div>
-                        </div>
-                    </div>
-
-                    <div class="control-group">
-                        <label>Step Control</label>
-                        <div class="stepper-controls">
-                            <div class="stepper-input">
-                                <input type="number" id="steps-${name}" value="100" min="1" placeholder="Steps">
-                            </div>
-                            <div class="stepper-input">
-                                <select id="dir-select-${name}" style="padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px;">
-                                    <option value="forward">Forward</option>
-                                    <option value="backward">Backward</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="button-group" style="margin-top: 10px;">
-                            <button class="btn btn-primary" onclick="stepMotor('${name}')">
-                                ✨ Step
-                            </button>
-                            <button class="btn btn-stop" onclick="controlMotor('${name}', 'stop')">
-                                ⏹️ Stop
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="status-display">
-                        Status: <span id="stepping-${name}">${motor.stepping ? 'Stepping' : 'Idle'}</span>
-                    </div>
-                `;
-
-                // Add RPM slider listener
-                setTimeout(() => {
-                    const slider = card.querySelector('.stepper-rpm');
-                    if (slider) {
-                        slider.addEventListener('input', (e) => {
-                            const rpm = e.target.value;
-                            document.getElementById(`rpm-${name}`).textContent = rpm + ' RPM';
-                            controlMotor(name, 'speed', parseFloat(rpm), true);
-                        });
-                    }
-                }, 0);
-            }
-
-            return card;
-        }
-
-        async function setMotorPower(name, power) {
-            try {
-                const response = await fetch(`${apiHost}/motors/${name}/power`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ power })
-                });
-
-                if (!response.ok) throw new Error('API request failed');
-
-                updateMotorStatus();
-                clearError();
-            } catch (error) {
-                console.error('Error setting motor power:', error);
-                showError(`Failed to set motor power: ${error.message}`);
-            }
-        }
-
-        function updatePowerDisplay(name, power) {
-            const element = document.getElementById(`power-${name}`);
-            if (element) {
-                if (power > 0) {
-                    element.textContent = `${power}% →`;
-                } else if (power < 0) {
-                    element.textContent = `${-power}% ←`;
-                } else {
-                    element.textContent = 'Stop';
-                }
-            }
-        }
-
-        async function controlMotor(name, action, value, isStepper = false) {
-            try {
-                let endpoint = `${apiHost}/motors/${name}`;
-                let data = {};
-
-                if (action === 'speed') {
-                    endpoint += '/speed';
-                    data = isStepper ? { rpm: value } : { speed: value };
-                } else if (action === 'direction') {
-                    endpoint += '/direction';
-                    data = { direction: value };
-                } else if (action === 'stop') {
-                    endpoint += '/stop';
-                }
-
-                const response = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: Object.keys(data).length > 0 ? JSON.stringify(data) : undefined
-                });
-
-                if (!response.ok) throw new Error('API request failed');
-
-                const result = await response.json();
-                updateMotorStatus();
-                clearError();
-            } catch (error) {
-                console.error('Error controlling motor:', error);
-                showError(`Failed to control motor: ${error.message}`);
-            }
-        }
-
-        async function stepMotor(name) {
-            const stepsInput = document.getElementById(`steps-${name}`);
-            const dirSelect = document.getElementById(`dir-select-${name}`);
-
-            if (!stepsInput || !dirSelect) return;
-
-            const steps = parseInt(stepsInput.value) || 100;
-            const direction = dirSelect.value;
-
-            if (steps < 1) {
-                showError('Steps must be at least 1');
-                return;
-            }
-
-            try {
-                const response = await fetch(`${apiHost}/motors/${name}/step`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ steps, direction })
-                });
-
-                if (!response.ok) throw new Error('API request failed');
-
-                updateMotorStatus();
-                clearError();
-            } catch (error) {
-                console.error('Error stepping motor:', error);
-                showError(`Failed to step motor: ${error.message}`);
+                showError(`Failed to load motors: ${error.message}`);
             }
         }
 
         async function updateMotorStatus() {
             try {
-                const response = await fetch(`${apiHost}/motors`);
-                if (!response.ok) throw new Error('Failed to fetch status');
-
-                const updatedMotors = await response.json();
-
-                // Update UI with latest status
-                Object.entries(updatedMotors).forEach(([name, motor]) => {
-                    if (motor.type === 'DC') {
-                        const dirElement = document.getElementById(`dir-${name}`);
-                        const powerElement = document.getElementById(`power-${name}`);
-                        if (dirElement) dirElement.textContent = motor.direction;
-                        if (powerElement) {
-                            if (motor.direction === 'forward') {
-                                powerElement.textContent = `${motor.speed}% →`;
-                            } else if (motor.direction === 'backward') {
-                                powerElement.textContent = `${motor.speed}% ←`;
-                            } else {
-                                powerElement.textContent = 'Stop';
-                            }
-                        }
-                    } else if (motor.type === 'Stepper') {
-                        const steppingElement = document.getElementById(`stepping-${name}`);
-                        if (steppingElement) {
-                            steppingElement.textContent = motor.stepping ? 'Stepping' : 'Idle';
-                        }
-                    }
-                });
-
-                updateConnectionStatus(true);
+                motors = await apiRequest('/motors');
+                renderMotors();
             } catch (error) {
-                updateConnectionStatus(false);
+                return;
             }
         }
 
-        function updateConnectionStatus(connected) {
-            const dot = document.getElementById('status-dot');
-            const text = document.getElementById('status-text');
-
-            if (connected) {
-                dot.className = 'status-dot connected';
-                text.textContent = 'Connected';
-                text.style.color = '#51cf66';
-            } else {
-                dot.className = 'status-dot';
-                text.textContent = 'Disconnected';
-                text.style.color = '#ff6b6b';
+        function renderMotors() {
+            const container = document.getElementById('motors-container');
+            const entries = Object.entries(motors);
+            if (!entries.length) {
+                container.innerHTML = emptyItem('No motors loaded');
+                return;
             }
+            container.innerHTML = entries.map(([name, motor]) => `
+                <div class="motor-card">
+                    <div class="summary-title">${escapeHtml(name)}</div>
+                    <div class="summary-meta">${escapeHtml(motor.type || '--')}</div>
+                    <div class="summary-text">${escapeHtml(motor.direction || (motor.stepping ? 'stepping' : 'idle'))} ${motor.speed !== undefined ? `${escapeHtml(motor.speed)}%` : ''}</div>
+                    ${motor.type === 'DC' ? `
+                        <div class="actions">
+                            <button class="good" onclick="setMotorPower('${escapeJs(name)}', 30)">Forward</button>
+                            <button class="danger" onclick="setMotorPower('${escapeJs(name)}', 0)">Stop</button>
+                            <button class="secondary" onclick="setMotorPower('${escapeJs(name)}', -30)">Back</button>
+                        </div>
+                    ` : `
+                        <div class="actions">
+                            <button onclick="stepMotor('${escapeJs(name)}', 80, 'forward')">Step Fwd</button>
+                            <button class="secondary" onclick="stepMotor('${escapeJs(name)}', 80, 'backward')">Step Back</button>
+                        </div>
+                    `}
+                </div>
+            `).join('');
+        }
+
+        async function setMotorPower(name, power) {
+            try {
+                await apiRequest(`/motors/${encodeURIComponent(name)}/power`, {
+                    method: 'POST',
+                    body: JSON.stringify({ power })
+                });
+                await updateMotorStatus();
+            } catch (error) {
+                showError(`Failed to set motor power: ${error.message}`);
+            }
+        }
+
+        async function stepMotor(name, steps, direction) {
+            try {
+                await apiRequest(`/motors/${encodeURIComponent(name)}/step`, {
+                    method: 'POST',
+                    body: JSON.stringify({ steps, direction })
+                });
+                await updateMotorStatus();
+            } catch (error) {
+                showError(`Failed to step motor: ${error.message}`);
+            }
+        }
+
+        function renderActionPills(actions) {
+            if (!Array.isArray(actions) || actions.length === 0) {
+                return '<div class="pill-list"><span class="pill warn">No actions</span></div>';
+            }
+            return `<div class="pill-list">${actions.map((action) => `<span class="pill good">${escapeHtml(actionSummary(action))}</span>`).join('')}</div>`;
+        }
+
+        function actionSummary(action) {
+            if (!action || typeof action !== 'object') return 'unknown action';
+            const type = action.type || 'unknown';
+            if (type === 'drive_tank') return `drive L${action.left_power} R${action.right_power} ${action.duration_ms}ms`;
+            if (type === 'rotate') return `rotate ${action.direction || '--'} P${action.power} ${action.duration_ms}ms`;
+            if (type === 'stepper_move') return `arm ${action.motor || '--'} ${action.steps || '--'} ${action.direction || ''}`;
+            if (type === 'display_text') return `display "${action.text || ''}"`;
+            if (type === 'camera_capture') return 'camera capture';
+            if (type === 'stop_all' || type === 'stop') return 'stop all';
+            return type;
+        }
+
+        function rawDetails(value) {
+            return `<details><summary>Raw JSON</summary><pre>${escapeHtml(JSON.stringify(value, null, 2))}</pre></details>`;
+        }
+
+        function emptyItem(text) {
+            return `<div class="summary-item"><div class="summary-meta">${escapeHtml(text)}</div></div>`;
+        }
+
+        function getNumberInput(id, fallback = 0) {
+            const value = Number(document.getElementById(id)?.value);
+            return Number.isFinite(value) ? value : fallback;
+        }
+
+        function formatTime(value) {
+            if (!value) return '--';
+            return String(value).replace('T', ' ');
+        }
+
+        function truncate(value, max) {
+            const text = String(value || '');
+            return text.length > max ? `${text.slice(0, max)}...` : text;
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#039;');
+        }
+
+        function escapeJs(value) {
+            return String(value ?? '').replaceAll('\\', '\\\\').replaceAll("'", "\\'");
         }
 
         function showError(message) {
-            const errorDiv = document.getElementById('error-message');
-            errorDiv.textContent = '❌ ' + message;
-            errorDiv.classList.add('show');
+            const element = document.getElementById('error-message');
+            element.textContent = message;
+            element.classList.add('show');
         }
 
         function clearError() {
-            const errorDiv = document.getElementById('error-message');
-            errorDiv.classList.remove('show');
+            document.getElementById('error-message').classList.remove('show');
         }
     </script>
 </body>

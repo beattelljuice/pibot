@@ -130,6 +130,8 @@ With `"two_stage": true`, `/ollama/decide` makes two model calls. The planner mo
 
 The prompts and payload include an action reference. Chassis navigation uses `drive_tank` and `rotate`; `stepper_move` is marked as arm-only and should not be used to move toward a doorway or destination.
 
+If the translator returns valid JSON with an empty `actions` list while the planner intent clearly names a safe allowed action, the runtime applies a conservative deterministic fallback before safety validation. Examples: `drive_tank` or "drive the chassis forward" becomes a short low-power `drive_tank`; "rotate the chassis" becomes a short low-power `rotate`. The fallback still goes through `SafetySupervisor`.
+
 The configured `translator_model` must exist on the Ollama server. Install it on the Ollama computer or change the config to a text model you already have:
 
 ```bash

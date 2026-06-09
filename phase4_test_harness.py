@@ -250,6 +250,48 @@ def test_retry_translation_uses_cached_intent_without_planner():
     assert capture["calls"][2]["payload"]["model"] == "translator-test-model"
 
 
+def test_empty_translation_gets_drive_fallback_from_intent():
+    client = make_client(
+        [
+            "drive_tank with sufficient left and right motor powers to move the chassis toward the doorway.",
+            '{"speech":"Moving forward slowly.","actions":[],"next_check_ms":500}',
+        ]
+    )
+    result = client.decide(make_snapshot(), operator_goal="move toward the doorway")
+    action = result["proposal"]["actions"][0]
+    assert result["fallback_action"] == action
+    assert action["type"] == "drive_tank"
+    assert action["left_power"] == 20
+    assert action["right_power"] == 20
+    assert action["duration_ms"] == 300
+
+
+def test_empty_translation_gets_rotate_fallback_from_intent():
+    client = make_client(
+        [
+            "Rotate the chassis toward the doorway to explore the interior space.",
+            '{"speech":"Rotating toward the doorway.","actions":[],"next_check_ms":500}',
+        ]
+    )
+    result = client.decide(make_snapshot(), operator_goal="face the doorway")
+    action = result["proposal"]["actions"][0]
+    assert action["type"] == "rotate"
+    assert action["power"] == 20
+    assert action["duration_ms"] == 250
+
+
+def test_empty_translation_respects_no_action_intent():
+    client = make_client(
+        [
+            "No action should be taken because the request is unsafe.",
+            '{"speech":"Holding position.","actions":[],"next_check_ms":500}',
+        ]
+    )
+    result = client.decide(make_snapshot(), operator_goal="do not move")
+    assert result["fallback_action"] is None
+    assert result["proposal"]["actions"] == []
+
+
 def test_request_log_records_success_and_omits_images():
     log_path = Path("phase4_test_ollama_requests.jsonl")
     if log_path.exists():
@@ -325,6 +367,9 @@ TESTS = [
     test_disabled_client_rejected,
     test_robot_state_records_success,
     test_retry_translation_uses_cached_intent_without_planner,
+    test_empty_translation_gets_drive_fallback_from_intent,
+    test_empty_translation_gets_rotate_fallback_from_intent,
+    test_empty_translation_respects_no_action_intent,
     test_request_log_records_success_and_omits_images,
     test_request_log_records_raw_response_on_parse_error,
 ]

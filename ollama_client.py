@@ -1,5 +1,6 @@
 import json
 import socket
+import re
 import time
 import urllib.error
 import urllib.request
@@ -608,6 +609,15 @@ class OllamaClient:
             content = self._extract_content(response)
             parsed = self._parse_json_content(content)
             proposal = self._validate_proposal(parsed)
+            fallback_action = self._fallback_action_from_intent(
+                proposal,
+                intent_text,
+                operator_goal,
+            )
+            if fallback_action:
+                proposal["actions"] = [fallback_action]
+                if not proposal["speech"].strip():
+                    proposal["speech"] = self._speech_for_fallback(fallback_action)
             response_at = self._now()
             total_duration_ms = int((time.monotonic() - start_total) * 1000)
             self._last_response_at = response_at
@@ -633,6 +643,7 @@ class OllamaClient:
                 response=response,
                 proposal=proposal,
                 intent=intent_text,
+                fallback_action=fallback_action,
                 error=None,
             )
             return {
@@ -645,6 +656,7 @@ class OllamaClient:
                 "duration_ms": total_duration_ms,
                 "intent": intent_text,
                 "proposal": proposal,
+                "fallback_action": deepcopy(fallback_action),
                 "planning": planning_result,
                 "translation": {
                     "status": "success",
@@ -857,6 +869,140 @@ class OllamaClient:
             "next_check_ms": next_check_ms,
         }
 
+    def _fallback_action_from_intent(
+        self,
+        proposal: Dict[str, Any],
+        intent_text: str,
+        operator_goal: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Create a conservative action when translation returns no actions."""
+        if proposal.get("actions"):
+            return None
+
+        text = f"{intent_text} {operator_goal}".lower()
+        if self._contains_any(
+            text,
+            [
+                "no action",
+                "do not move",
+                "don't move",
+                "hold position",
+                "stay stopped",
+                "stop for safety",
+                "unsafe",
+                "ambiguous",
+                "impossible",
+            ],
+        ):
+            return None
+
+        if self._contains_any(text, ["stop_all", "emergency stop", "stop all"]):
+            return {"type": "stop_all"}
+
+        display_text = self._extract_display_text(intent_text, operator_goal)
+        if display_text:
+            return {
+                "type": "display_text",
+                "text": display_text,
+                "x": 0,
+                "y": 0,
+                "clear": True,
+            }
+
+        if self._contains_any(
+            text,
+            ["camera_capture", "capture camera", "camera snapshot", "take a picture"],
+        ):
+            return {"type": "camera_capture"}
+
+        if "drive_tank" in text:
+            power = -20 if self._contains_any(text, ["backward", "reverse", "back up"]) else 20
+            return {
+                "type": "drive_tank",
+                "left_power": power,
+                "right_power": power,
+                "duration_ms": 300,
+            }
+
+        if self._contains_any(text, ["rotate", "turn", "face"]):
+            direction = "left"
+            if self._contains_any(text, ["right", "clockwise"]):
+                direction = "right"
+            if self._contains_any(text, ["left", "counterclockwise"]):
+                direction = "left"
+            return {
+                "type": "rotate",
+                "power": 20,
+                "direction": direction,
+                "duration_ms": 250,
+            }
+
+        if self._contains_any(
+            text,
+            [
+                "drive_tank",
+                "drive",
+                "move",
+                "forward",
+                "toward",
+                "towards",
+                "doorway",
+                "chassis",
+                "navigate",
+                "explore",
+            ],
+        ):
+            power = 20
+            if self._contains_any(text, ["slow", "slowly", "gentle", "gently", "cautious"]):
+                power = 15
+            if self._contains_any(text, ["backward", "reverse", "back up"]):
+                power = -power
+            return {
+                "type": "drive_tank",
+                "left_power": power,
+                "right_power": power,
+                "duration_ms": 300,
+            }
+
+        return None
+
+    def _extract_display_text(self, intent_text: str, operator_goal: str) -> Optional[str]:
+        text = f"{intent_text} {operator_goal}"
+        if not self._contains_any(text.lower(), ["display_text", "oled", "display", "write", "show"]):
+            return None
+
+        quoted = re.search(r"[\"']([^\"']{1,80})[\"']", text)
+        if quoted:
+            return quoted.group(1).strip()
+
+        for pattern in [
+            r"(?:write|show|display)\s+(.{1,40}?)(?:\s+on\s+the\s+oled|\s+on\s+the\s+display|\.|$)",
+            r"text\s+(.{1,40}?)(?:\.|$)",
+        ]:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                candidate = match.group(1).strip(" .")
+                if candidate:
+                    return candidate[:80]
+        return None
+
+    def _contains_any(self, text: str, needles: list) -> bool:
+        return any(needle in text for needle in needles)
+
+    def _speech_for_fallback(self, action: Dict[str, Any]) -> str:
+        action_type = action.get("type")
+        if action_type == "drive_tank":
+            return "Moving cautiously."
+        if action_type == "rotate":
+            return "Rotating cautiously."
+        if action_type == "display_text":
+            return "Updating the display."
+        if action_type == "camera_capture":
+            return "Capturing a camera frame."
+        if action_type == "stop_all":
+            return "Stopping all motion."
+        return "Executing a safe action."
+
     def _action_reference(self) -> Dict[str, Any]:
         return deepcopy(ACTION_REFERENCE)
 
@@ -945,6 +1091,7 @@ class OllamaClient:
         response: Optional[Dict[str, Any]],
         proposal: Optional[Dict[str, Any]],
         intent: Optional[str] = None,
+        fallback_action: Optional[Dict[str, Any]] = None,
         error: Optional[str] = None,
     ) -> None:
         if not self.request_log_enabled:
@@ -971,6 +1118,7 @@ class OllamaClient:
                     "status": "error" if error else "success",
                     "error": error,
                     "intent": intent,
+                    "fallback_action": deepcopy(fallback_action),
                     "request": self._sanitize_for_log(payload),
                     "response": self._sanitize_for_log(response),
                     "proposal": deepcopy(proposal),
