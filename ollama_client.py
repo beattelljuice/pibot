@@ -23,12 +23,78 @@ AVAILABLE_ACTIONS = [
     "camera_capture",
 ]
 
+ACTION_REFERENCE = {
+    "stop_all": {
+        "purpose": "Stop all chassis and arm motors immediately.",
+        "movement": "safety_stop",
+        "schema": {"type": "stop_all"},
+    },
+    "drive_tank": {
+        "purpose": "Move the chassis forward, backward, or along a gentle arc by powering the left and right drive motors.",
+        "movement": "chassis",
+        "schema": {
+            "type": "drive_tank",
+            "left_power": "number from -100 to 100",
+            "right_power": "number from -100 to 100",
+            "duration_ms": "short duration, max safety limit applies",
+        },
+        "example": {
+            "type": "drive_tank",
+            "left_power": 20,
+            "right_power": 20,
+            "duration_ms": 300,
+        },
+    },
+    "rotate": {
+        "purpose": "Turn the chassis in place to face another direction.",
+        "movement": "chassis",
+        "schema": {
+            "type": "rotate",
+            "power": "positive number",
+            "direction": "left or right",
+            "duration_ms": "short duration, max safety limit applies",
+        },
+        "example": {
+            "type": "rotate",
+            "power": 20,
+            "direction": "left",
+            "duration_ms": 250,
+        },
+    },
+    "stepper_move": {
+        "purpose": "Move one arm stepper motor only. This does not move the chassis toward a doorway or destination.",
+        "movement": "arm_only",
+        "schema": {
+            "type": "stepper_move",
+            "motor": "stepper_1 or stepper_2",
+            "steps": "positive integer, max safety limit applies",
+            "direction": "forward or backward",
+        },
+    },
+    "display_text": {
+        "purpose": "Write text on the OLED display.",
+        "movement": "none",
+        "schema": {"type": "display_text", "text": "string", "x": 0, "y": 0, "clear": True},
+    },
+    "display_frame": {
+        "purpose": "Write a full 128x64 OLED pixel frame.",
+        "movement": "none",
+        "schema": {"type": "display_frame", "rows": "64 strings of 128 0/1 pixels"},
+    },
+    "camera_capture": {
+        "purpose": "Capture a camera frame for observation.",
+        "movement": "none",
+        "schema": {"type": "camera_capture"},
+    },
+}
+
 SYSTEM_PROMPT = """You are the decision layer for a physical robot chassis.
 You must only return valid JSON.
 You may only use the actions listed in available_actions.
 All movement must be short-duration and cautious.
 If sensor data is stale, unsafe, or missing, stop or wait by returning no movement actions.
 Never invent sensors, motors, actions, or hardware limits.
+Use drive_tank or rotate for chassis movement. Never use stepper_move for navigation; stepper_move is arm-only.
 The robot runtime validates every action before execution.
 Return exactly this JSON shape:
 {"speech":"short status sentence","actions":[],"next_check_ms":500}
@@ -41,6 +107,8 @@ Do not return JSON.
 Do not invent sensors, motors, actions, or hardware limits.
 If the goal is empty, ambiguous, unsafe, or impossible, say that no physical action should be taken.
 Mention only actions that can be represented by available_actions.
+Use drive_tank or rotate for chassis movement. Never use stepper_move for navigation; stepper_move is arm-only.
+If the goal is to move toward a doorway or destination, describe cautious chassis movement, not arm movement.
 For movement, specify cautious short-duration motion only.
 """
 
@@ -49,6 +117,8 @@ You must only return valid JSON.
 You may only use the actions listed in available_actions.
 Do not invent sensors, motors, actions, or hardware limits.
 If the intent is ambiguous, unsafe, impossible, or says no physical action, return an empty actions list.
+Use drive_tank or rotate for chassis movement. Never use stepper_move for navigation; stepper_move is arm-only.
+If an intent says to move the robot toward a doorway using stepper movement, correct that hardware mistake by using cautious chassis drive_tank or rotate actions instead of stepper_move.
 All movement must be short-duration and cautious.
 Return exactly this JSON shape:
 {"speech":"short status sentence","actions":[],"next_check_ms":500}
@@ -171,6 +241,7 @@ class OllamaClient:
         user_payload = {
             "operator_goal": goal,
             "available_actions": list(AVAILABLE_ACTIONS),
+            "action_reference": self._action_reference(),
             "robot_snapshot": self._build_model_snapshot(robot_snapshot),
             "output_schema": {
                 "speech": "string",
@@ -215,6 +286,7 @@ class OllamaClient:
         user_payload = {
             "operator_goal": goal,
             "available_actions": list(AVAILABLE_ACTIONS),
+            "action_reference": self._action_reference(),
             "robot_snapshot": self._build_model_snapshot(robot_snapshot),
             "instruction": (
                 "Write a short plain-English intent describing what the robot "
@@ -255,6 +327,7 @@ class OllamaClient:
         user_payload = {
             "operator_goal": operator_goal,
             "available_actions": list(AVAILABLE_ACTIONS),
+            "action_reference": self._action_reference(),
             "planner_intent": intent_text,
             "robot_snapshot": model_snapshot,
             "output_schema": {
@@ -783,6 +856,9 @@ class OllamaClient:
             "actions": deepcopy(actions),
             "next_check_ms": next_check_ms,
         }
+
+    def _action_reference(self) -> Dict[str, Any]:
+        return deepcopy(ACTION_REFERENCE)
 
     def _build_model_snapshot(self, robot_snapshot: Dict[str, Any]) -> Dict[str, Any]:
         """Return a compact, model-facing snapshot without internal AI metadata."""

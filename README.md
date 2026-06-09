@@ -128,6 +128,8 @@ Set `"execute": true` only when the robot is in `ai` mode and you want proposed 
 
 With `"two_stage": true`, `/ollama/decide` makes two model calls. The planner model reads the full robot state and optional image, then writes a plain-English intent. The translator model reads that intent and returns strict action JSON. If translation fails, call `/ollama/translate` to retry only the cheap JSON translation stage without rerunning the image/planning request.
 
+The prompts and payload include an action reference. Chassis navigation uses `drive_tank` and `rotate`; `stepper_move` is marked as arm-only and should not be used to move toward a doorway or destination.
+
 The configured `translator_model` must exist on the Ollama server. Install it on the Ollama computer or change the config to a text model you already have:
 
 ```bash

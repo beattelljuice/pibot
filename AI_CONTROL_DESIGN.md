@@ -450,6 +450,8 @@ The default config keeps `execute_actions` false, so the model can think and ret
 
 The one-shot decision path can run in two stages. The planner model handles expensive reasoning and optional image input, producing plain-English intent. The translator model converts that cached intent to strict JSON. If translation fails, `POST /ollama/translate` retries only the translator stage.
 
+The model-facing action reference treats `drive_tank` and `rotate` as chassis movement, and `stepper_move` as arm-only movement. Navigation goals such as moving toward a doorway should never use the arm steppers.
+
 Ollama logs are retrievable with `GET /ollama/logs`. Two-stage calls produce separate planner and translator log entries. Vision request images are summarized by default instead of storing full base64 frames.
 
 ### Phase 5: Add AI loop

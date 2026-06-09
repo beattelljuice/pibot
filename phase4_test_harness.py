@@ -173,6 +173,27 @@ def test_model_snapshot_omits_internal_ollama_status():
     assert "ollama" not in user_payload["robot_snapshot"]["robot"]
 
 
+def test_action_reference_marks_steppers_as_arm_only():
+    client = OllamaClient(
+        enabled=True,
+        model="test-model",
+        request_log_enabled=False,
+    )
+    planner_payload = client.build_planner_payload(make_snapshot())
+    planner_user = json.loads(planner_payload["messages"][1]["content"])
+    assert planner_user["action_reference"]["stepper_move"]["movement"] == "arm_only"
+    assert planner_user["action_reference"]["drive_tank"]["movement"] == "chassis"
+
+    translator_payload = client.build_translator_payload(
+        "Move the robot towards the doorway using stepper movement.",
+        "move towards the doorway",
+        planner_user["robot_snapshot"],
+    )
+    translator_user = json.loads(translator_payload["messages"][1]["content"])
+    assert translator_user["action_reference"]["stepper_move"]["movement"] == "arm_only"
+    assert "correct that hardware mistake" in translator_payload["messages"][0]["content"]
+
+
 def test_disabled_client_rejected():
     client = OllamaClient(
         enabled=False,
@@ -300,6 +321,7 @@ TESTS = [
     test_payload_includes_camera_image,
     test_transport_receives_timeout_and_goal_override,
     test_model_snapshot_omits_internal_ollama_status,
+    test_action_reference_marks_steppers_as_arm_only,
     test_disabled_client_rejected,
     test_robot_state_records_success,
     test_retry_translation_uses_cached_intent_without_planner,
