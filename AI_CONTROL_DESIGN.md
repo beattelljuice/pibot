@@ -260,6 +260,8 @@ The AI loop should use `/camera/capture` when it needs a fresh vision input. The
 
 Later, the Ollama vision request can attach the base64 JPEG from `/camera/capture` if the selected model supports image input.
 
+Camera dimensions are dynamic. The runtime may request the largest detected camera mode, but the AI loop should trust the `width` and `height` returned with each capture instead of assuming a fixed resolution.
+
 ## Arm Control Note
 
 The two stepper motors should be treated as arms at the AI/action level.

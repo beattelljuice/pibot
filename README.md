@@ -64,22 +64,26 @@ Check that the camera appears:
 v4l2-ctl --list-devices
 ```
 
-The default camera config uses device index `0`:
+The default camera config uses device index `0` and automatic resolution:
 
 ```json
 "camera": {
   "enabled": true,
   "device_index": 0,
-  "width": 640,
-  "height": 480,
-  "fps": 15,
+  "width": "auto",
+  "height": "auto",
+  "fps": "auto",
+  "auto_resolution": true,
+  "prefer_max_resolution": true,
   "jpeg_quality": 85,
   "warmup_frames": 2,
   "stale_after_ms": 2000
 }
 ```
 
-If the camera is not the first video device, change `device_index` in `config.json`.
+With `auto_resolution` and `prefer_max_resolution` enabled, the controller uses `v4l2-ctl` to find the largest discrete camera mode and asks OpenCV to use it. If mode detection is unavailable, it uses the camera's default output. The actual captured width and height are reported in `/camera/status`, `/robot/state`, and `/camera/capture`.
+
+If the camera is not the first video device, change `device_index` in `config.json`. To force a specific mode, set numeric `width` and `height`, then set `auto_resolution` to `false`.
 
 The camera is exposed through:
 

@@ -34,9 +34,11 @@
   "camera": {
     "enabled": true,
     "device_index": 0,
-    "width": 640,
-    "height": 480,
-    "fps": 15,
+    "width": "auto",
+    "height": "auto",
+    "fps": "auto",
+    "auto_resolution": true,
+    "prefer_max_resolution": true,
     "jpeg_quality": 85,
     "warmup_frames": 2,
     "stale_after_ms": 2000

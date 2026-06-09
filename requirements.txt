@@ -3,5 +3,6 @@ Flask
 Werkzeug
 luma.oled
 Pillow
+opencv-contrib-python
 # Camera support uses OpenCV. On Raspberry Pi OS, install it with:
 # sudo apt install -y python3-opencv
