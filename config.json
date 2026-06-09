@@ -34,8 +34,8 @@
   "camera": {
     "enabled": true,
     "device_index": 0,
-    "width": "auto",
-    "height": "auto",
+    "width": "480",
+    "height": "270",
     "fps": "auto",
     "auto_resolution": true,
     "prefer_max_resolution": true,
@@ -54,8 +54,8 @@
     "enabled": true,
     "url": "http://10.0.0.9:11434",
     "model": "minicpm-v4.6:1b",
-    "timeout_ms": 1500,
-    "include_camera": false,
+    "timeout_ms": 60000,
+    "include_camera": true,
     "execute_actions": false,
     "request_log": {
       "enabled": true,

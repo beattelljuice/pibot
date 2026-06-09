@@ -1533,6 +1533,11 @@
             const goalInput = document.getElementById('runtime-goal');
             const goal = goalInput ? goalInput.value : '';
 
+            if (execute && !goal.trim()) {
+                showError('Set an operator goal before using Decide + Execute');
+                return;
+            }
+
             try {
                 if (output) {
                     output.textContent = 'Waiting for Ollama...';

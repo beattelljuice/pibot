@@ -123,6 +123,19 @@ def test_transport_receives_timeout_and_goal_override():
     assert "drive_tank" in user_payload["available_actions"]
 
 
+def test_model_snapshot_omits_internal_ollama_status():
+    client = OllamaClient(
+        enabled=True,
+        model="test-model",
+        request_log_enabled=False,
+    )
+    snapshot = make_snapshot()
+    snapshot["robot"]["ollama"] = {"execute_actions": False, "last_error": "old error"}
+    payload = client.build_payload(snapshot)
+    user_payload = json.loads(payload["messages"][1]["content"])
+    assert "ollama" not in user_payload["robot_snapshot"]["robot"]
+
+
 def test_disabled_client_rejected():
     client = OllamaClient(
         enabled=False,
@@ -169,6 +182,32 @@ def test_request_log_records_success_and_omits_images():
             log_path.unlink()
 
 
+def test_request_log_records_raw_response_on_parse_error():
+    log_path = Path("phase4_test_ollama_error.jsonl")
+    if log_path.exists():
+        log_path.unlink()
+
+    try:
+        client = make_client('{"speech" "bad json","actions":[],"next_check_ms":500}')
+        client.request_log_enabled = True
+        client.request_log_path = log_path
+        try:
+            client.decide(make_snapshot())
+        except OllamaClientError:
+            pass
+        else:
+            raise AssertionError("bad model JSON should be rejected")
+
+        log = client.read_request_log(limit=5)
+        assert log["count"] == 1
+        entry = log["entries"][0]
+        assert entry["status"] == "error"
+        assert entry["response"]["message"]["content"].startswith('{"speech" "bad json"')
+    finally:
+        if log_path.exists():
+            log_path.unlink()
+
+
 TESTS = [
     test_decide_parses_strict_json,
     test_decide_recovers_wrapped_json,
@@ -176,9 +215,11 @@ TESTS = [
     test_action_must_be_object,
     test_payload_includes_camera_image,
     test_transport_receives_timeout_and_goal_override,
+    test_model_snapshot_omits_internal_ollama_status,
     test_disabled_client_rejected,
     test_robot_state_records_success,
     test_request_log_records_success_and_omits_images,
+    test_request_log_records_raw_response_on_parse_error,
 ]
 
 

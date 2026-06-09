@@ -367,6 +367,13 @@ def create_api(
             operator_goal = data.get("goal")
             if operator_goal is not None and not isinstance(operator_goal, str):
                 return jsonify({"error": "goal must be a string"}), 400
+            effective_goal = (
+                operator_goal
+                if operator_goal is not None
+                else robot_state.get_status().get("goal", "")
+            )
+            if execute and not effective_goal.strip():
+                return jsonify({"error": "goal is required when execute=true"}), 400
 
             image_b64 = None
             if include_camera:
@@ -381,7 +388,7 @@ def create_api(
 
             decision = ollama_client.decide(
                 get_robot_snapshot(),
-                operator_goal=operator_goal,
+                operator_goal=effective_goal,
                 image_b64=image_b64,
             )
             response = {

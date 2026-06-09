@@ -124,6 +124,8 @@ Set `"execute": true` only when the robot is in `ai` mode and you want proposed 
 
 Every Ollama decision request is logged as one JSON object per line in `logs/ollama_requests.jsonl`. The log records request payload, raw model response, parsed proposal, timing, model, URL, and errors. Camera image base64 is omitted by default and replaced with length plus SHA-256; set `"include_images": true` only if you explicitly want full image payloads written to disk.
 
+`Decide + Execute` requires a non-empty operator goal. This avoids sending the model an empty task and then executing a no-op or ambiguous action proposal.
+
 Retrieve recent entries through the API:
 
 ```bash

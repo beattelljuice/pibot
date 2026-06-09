@@ -134,7 +134,7 @@ class OllamaClient:
         user_payload = {
             "operator_goal": goal,
             "available_actions": list(AVAILABLE_ACTIONS),
-            "robot_snapshot": robot_snapshot,
+            "robot_snapshot": self._build_model_snapshot(robot_snapshot),
             "output_schema": {
                 "speech": "string",
                 "actions": "array of allowed action objects",
@@ -174,6 +174,7 @@ class OllamaClient:
         self._last_request_at = self._now()
         request_at = self._last_request_at
         self._last_error = None
+        response = None
         start = time.monotonic()
 
         try:
@@ -218,7 +219,7 @@ class OllamaClient:
                 response_at=self._last_response_at,
                 duration_ms=self._last_duration_ms,
                 payload=payload,
-                response=None,
+                response=response,
                 proposal=None,
                 error=str(e),
             )
@@ -233,7 +234,7 @@ class OllamaClient:
                 response_at=self._last_response_at,
                 duration_ms=self._last_duration_ms,
                 payload=payload,
-                response=None,
+                response=response,
                 proposal=None,
                 error=message,
             )
@@ -392,6 +393,72 @@ class OllamaClient:
             "speech": speech[:500],
             "actions": deepcopy(actions),
             "next_check_ms": next_check_ms,
+        }
+
+    def _build_model_snapshot(self, robot_snapshot: Dict[str, Any]) -> Dict[str, Any]:
+        """Return a compact, model-facing snapshot without internal AI metadata."""
+        robot = robot_snapshot.get("robot", {}) if isinstance(robot_snapshot, dict) else {}
+        memory = robot_snapshot.get("memory", {}) if isinstance(robot_snapshot, dict) else {}
+
+        camera = robot.get("camera", {}) if isinstance(robot, dict) else {}
+        display = robot.get("display", {}) if isinstance(robot, dict) else {}
+        safety = robot.get("safety", {}) if isinstance(robot, dict) else {}
+        executor = robot.get("executor", {}) if isinstance(robot, dict) else {}
+
+        compact_robot = {
+            "mode": robot.get("mode"),
+            "operator_goal": robot.get("operator_goal"),
+            "emergency_stop": robot.get("emergency_stop"),
+            "emergency_stop_reason": robot.get("emergency_stop_reason"),
+            "motors": deepcopy(robot.get("motors", {})),
+            "executor": {
+                "active_action": deepcopy(executor.get("active_action")),
+            },
+            "camera": {
+                "available": camera.get("available"),
+                "width": camera.get("width"),
+                "height": camera.get("height"),
+                "last_frame": deepcopy(camera.get("last_frame")),
+            },
+            "display": {
+                "available": display.get("available"),
+                "width": display.get("width"),
+                "height": display.get("height"),
+                "last_action": deepcopy(display.get("last_action")),
+            },
+            "safety": {
+                "mode": safety.get("mode"),
+                "emergency_stop": safety.get("emergency_stop"),
+                "limits": deepcopy(safety.get("limits", {})),
+                "last_decision": self._compact_last_decision(safety.get("last_decision")),
+            },
+        }
+
+        recent_actions = memory.get("recent_actions", [])
+        if not isinstance(recent_actions, list):
+            recent_actions = []
+
+        return {
+            "status": robot_snapshot.get("status"),
+            "robot": compact_robot,
+            "sensors": deepcopy(robot_snapshot.get("sensors", {})),
+            "memory": {
+                "last_action": deepcopy(memory.get("last_action")),
+                "recent_actions": deepcopy(recent_actions[-5:]),
+            },
+            "timestamps": deepcopy(robot_snapshot.get("timestamps", {})),
+        }
+
+    def _compact_last_decision(self, decision: Any) -> Any:
+        if not isinstance(decision, dict):
+            return None
+        return {
+            "decision": decision.get("decision"),
+            "source": decision.get("source"),
+            "action": deepcopy(decision.get("action")),
+            "reason": decision.get("reason"),
+            "executed": decision.get("executed"),
+            "timestamp": decision.get("timestamp"),
         }
 
     def _record_error(self, message: str, start: float) -> None:
