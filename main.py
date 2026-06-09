@@ -10,6 +10,7 @@ from config import Config
 from display_controller import DisplayController
 from gpio_controller import GPIOController
 from motor_manager import MotorManager
+from ollama_client import OllamaClient
 from robot_state import RobotState
 from safety_supervisor import SafetySupervisor
 
@@ -29,6 +30,7 @@ def main() -> None:
     display = None
     camera = None
     safety = None
+    ollama = None
     cleanup_started = False
 
     def cleanup(signum=None, frame=None, exit_process: bool = False) -> None:
@@ -175,6 +177,22 @@ def main() -> None:
         )
         main_log("Safety Supervisor initialized")
 
+        ollama_config = config.get_ollama_config()
+        main_log("Initializing Ollama Client...")
+        ollama = OllamaClient(
+            enabled=ollama_config.get("enabled", False),
+            url=ollama_config.get("url", "http://localhost:11434"),
+            model=ollama_config.get("model", "llava:latest"),
+            timeout_ms=ollama_config.get("timeout_ms", 1500),
+            include_camera=ollama_config.get("include_camera", False),
+            execute_actions=ollama_config.get("execute_actions", False),
+            robot_state=robot_state,
+        )
+        if ollama.enabled:
+            main_log(f"Ollama Client configured for {ollama.model} at {ollama.url}")
+        else:
+            main_log("Ollama Client disabled")
+
         api_config = config.get_api_config()
         main_log("")
         main_log("=" * 60)
@@ -187,7 +205,7 @@ def main() -> None:
         main_log("=" * 60)
         main_log("")
 
-        app = create_api(manager, executor, robot_state, display, camera, safety)
+        app = create_api(manager, executor, robot_state, display, camera, safety, ollama)
 
         signal.signal(signal.SIGINT, handle_signal)
         signal.signal(signal.SIGTERM, handle_signal)

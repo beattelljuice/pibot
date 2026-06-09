@@ -453,6 +453,21 @@
             min-height: 80px;
         }
 
+        .runtime-check {
+            display: flex !important;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            font-weight: 600;
+            color: #555;
+            font-size: 0.9em;
+        }
+
+        .runtime-check input {
+            width: auto;
+            margin: 0;
+        }
+
         .runtime-row {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -614,6 +629,7 @@
                     <span class="status-chip" id="chip-display">Display: --</span>
                     <span class="status-chip" id="chip-camera">Camera: --</span>
                     <span class="status-chip" id="chip-safety">Safety: --</span>
+                    <span class="status-chip" id="chip-ollama">Ollama: --</span>
                 </div>
             </div>
 
@@ -795,6 +811,20 @@
                 </div>
 
                 <div class="runtime-card state-card">
+                    <h3>Ollama Brain</h3>
+                    <label class="runtime-check" for="ollama-include-camera">
+                        <input type="checkbox" id="ollama-include-camera">
+                        Include camera frame
+                    </label>
+                    <div class="runtime-actions">
+                        <button class="btn btn-primary" onclick="refreshOllamaStatus()">Ollama Status</button>
+                        <button class="btn btn-primary" onclick="ollamaDecide(false)">Decide</button>
+                        <button class="btn btn-forward" onclick="ollamaDecide(true)">Decide + Execute</button>
+                    </div>
+                    <pre class="state-json" id="ollama-result-json">No Ollama result yet.</pre>
+                </div>
+
+                <div class="runtime-card state-card">
                     <h3>Robot State</h3>
                     <pre class="state-json" id="robot-state-json">No state loaded.</pre>
                 </div>
@@ -929,6 +959,7 @@
             const displayChip = document.getElementById('chip-display');
             const cameraChip = document.getElementById('chip-camera');
             const safetyChip = document.getElementById('chip-safety');
+            const ollamaChip = document.getElementById('chip-ollama');
 
             if (!state || !state.robot) {
                 setChip(modeChip, 'Mode: --');
@@ -938,6 +969,7 @@
                 setChip(displayChip, 'Display: --');
                 setChip(cameraChip, 'Camera: --');
                 setChip(safetyChip, 'Safety: --');
+                setChip(ollamaChip, 'Ollama: --');
                 return;
             }
 
@@ -948,6 +980,7 @@
             const display = state.robot.display;
             const camera = state.robot.camera;
             const safety = state.robot.safety;
+            const ollama = state.robot.ollama;
 
             setChip(modeChip, `Mode: ${mode}`, mode === 'ai' ? 'warn' : mode === 'estop' ? 'danger' : 'good');
             setChip(estopChip, `E-Stop: ${estop ? 'Active' : 'Clear'}`, estop ? 'danger' : 'good');
@@ -967,6 +1000,11 @@
                 safetyChip,
                 `Safety: ${safety ? 'Ready' : 'Unavailable'}`,
                 safety ? 'good' : 'warn'
+            );
+            setChip(
+                ollamaChip,
+                `Ollama: ${ollama && ollama.enabled ? (ollama.last_error ? 'Error' : 'Ready') : 'Disabled'}`,
+                ollama && ollama.enabled ? (ollama.last_error ? 'danger' : 'good') : 'warn'
             );
         }
 
@@ -1456,6 +1494,63 @@
             } catch (error) {
                 console.error('Error refreshing safety status:', error);
                 showError(`Failed to refresh safety status: ${error.message}`);
+            }
+        }
+
+        async function refreshOllamaStatus() {
+            const output = document.getElementById('ollama-result-json');
+            try {
+                const result = await apiRequest('/ollama/status');
+                if (output) {
+                    output.textContent = JSON.stringify(result, null, 2);
+                }
+                await refreshRobotState();
+                clearError();
+            } catch (error) {
+                console.error('Error refreshing Ollama status:', error);
+                showError(`Failed to refresh Ollama status: ${error.message}`);
+            }
+        }
+
+        async function ollamaDecide(execute) {
+            const output = document.getElementById('ollama-result-json');
+            const includeCamera = Boolean(document.getElementById('ollama-include-camera')?.checked);
+            const goalInput = document.getElementById('runtime-goal');
+            const goal = goalInput ? goalInput.value : '';
+
+            try {
+                if (output) {
+                    output.textContent = 'Waiting for Ollama...';
+                }
+                const result = await apiRequest('/ollama/decide', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        execute,
+                        include_camera: includeCamera,
+                        goal
+                    })
+                });
+                if (output) {
+                    output.textContent = JSON.stringify(result, null, 2);
+                }
+
+                const proposalInput = document.getElementById('proposal-json');
+                const actions = result.decision && result.decision.proposal
+                    ? result.decision.proposal.actions
+                    : null;
+                if (proposalInput && Array.isArray(actions)) {
+                    proposalInput.value = JSON.stringify({ source: 'ai', actions }, null, 2);
+                }
+
+                await refreshRobotState();
+                await updateMotorStatus();
+                clearError();
+            } catch (error) {
+                console.error('Error asking Ollama for a decision:', error);
+                if (output) {
+                    output.textContent = JSON.stringify({ status: 'error', error: error.message }, null, 2);
+                }
+                showError(`Failed to get Ollama decision: ${error.message}`);
             }
         }
 

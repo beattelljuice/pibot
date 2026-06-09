@@ -435,6 +435,17 @@ Create an `OllamaBrain` module that:
 - Handles timeout/errors.
 - Produces proposed actions.
 
+Implemented as `ollama_client.py` plus:
+
+- `GET /ollama/status`
+- `POST /ollama/decide`
+- Browser tester panel for one-shot decisions
+- Optional camera-frame attachment for vision-capable models
+- Optional supervised execution through `SafetySupervisor`
+- `phase4_test_harness.py` for fake-Ollama validation
+
+The default config keeps `execute_actions` false, so the model can think and return proposed actions without moving the chassis. When `execute` is true on `/ollama/decide`, the API sends the returned `actions` list to the Phase 3 safety supervisor as source `ai`.
+
 ### Phase 5: Add AI loop
 
 Run the AI loop in a background thread.

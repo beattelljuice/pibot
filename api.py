@@ -1,9 +1,11 @@
 from flask import Flask, Response, jsonify, request, send_file
 from action_executor import ActionExecutor, ActionExecutorError
+from base64 import b64encode
 from camera_controller import CameraController, CameraControllerError
 from display_controller import DisplayController, DisplayControllerError
 from motor import DCMotor, StepperMotor
 from motor_manager import MotorManager
+from ollama_client import OllamaClient, OllamaClientError
 from robot_state import RobotState, RobotStateError
 from safety_supervisor import SafetySupervisor, SafetySupervisorError
 from datetime import datetime
@@ -22,6 +24,7 @@ def create_api(
     display_controller: DisplayController | None = None,
     camera_controller: CameraController | None = None,
     safety_supervisor: SafetySupervisor | None = None,
+    ollama_client: OllamaClient | None = None,
 ) -> Flask:
     """Create Flask API application."""
     app = Flask(__name__, static_folder='.', static_url_path='')
@@ -44,6 +47,8 @@ def create_api(
             display_controller=display_controller,
             camera_controller=camera_controller,
         )
+    if ollama_client is None:
+        ollama_client = OllamaClient(enabled=False, robot_state=robot_state)
     api_log("Creating Flask API application")
 
     def get_json_body() -> dict:
@@ -68,6 +73,7 @@ def create_api(
         snapshot["robot"]["display"] = display_controller.get_status()
         snapshot["robot"]["camera"] = camera_controller.get_status()
         snapshot["robot"]["safety"] = safety_supervisor.get_status()
+        snapshot["robot"]["ollama"] = ollama_client.get_status()
         return snapshot
 
     def display_error_response(error: DisplayControllerError):
@@ -96,6 +102,12 @@ def create_api(
             )
         except Exception as e:
             api_log(f"Camera sensor state update failed: {e}")
+
+    def record_ai_error(error: str) -> None:
+        try:
+            robot_state.record_ai_response(None, error=error)
+        except Exception as e:
+            api_log(f"AI error state update failed: {e}")
 
     @app.route('/')
     def serve_ui():
@@ -303,8 +315,6 @@ def create_api(
         """Capture a JPEG frame and return metadata plus base64 image data."""
         api_log("POST /camera/capture - Capturing JSON camera frame")
         try:
-            from base64 import b64encode
-
             jpeg_bytes, meta = camera_controller.capture_jpeg()
             record_camera_capture(meta)
             record_api_action(
@@ -328,6 +338,70 @@ def create_api(
             )
         except CameraControllerError as e:
             return camera_error_response(e)
+
+    @app.route("/ollama/status", methods=["GET"])
+    def get_ollama_status():
+        """Get Ollama one-shot brain status."""
+        api_log("GET /ollama/status - Getting Ollama status")
+        return jsonify(ollama_client.get_status())
+
+    @app.route("/ollama/decide", methods=["POST"])
+    def ollama_decide():
+        """Ask Ollama for one action proposal and optionally execute it safely."""
+        api_log(f"POST /ollama/decide - Request body: {request.get_json(silent=True)}")
+        camera_frame = None
+        try:
+            data = get_json_body()
+            include_camera = bool(data.get("include_camera", ollama_client.include_camera))
+            execute = bool(data.get("execute", ollama_client.execute_actions))
+            operator_goal = data.get("goal")
+            if operator_goal is not None and not isinstance(operator_goal, str):
+                return jsonify({"error": "goal must be a string"}), 400
+
+            image_b64 = None
+            if include_camera:
+                jpeg_bytes, meta = camera_controller.capture_jpeg()
+                image_b64 = b64encode(jpeg_bytes).decode("ascii")
+                record_camera_capture(meta)
+                camera_frame = {
+                    **meta,
+                    "encoding": "base64",
+                    "included_in_prompt": True,
+                }
+
+            decision = ollama_client.decide(
+                get_robot_snapshot(),
+                operator_goal=operator_goal,
+                image_b64=image_b64,
+            )
+            response = {
+                "status": "success",
+                "execute": execute,
+                "include_camera": include_camera,
+                "camera_frame": camera_frame,
+                "ollama": ollama_client.get_status(),
+                "decision": decision,
+            }
+            if execute:
+                response["safety"] = safety_supervisor.propose(
+                    decision["proposal"]["actions"],
+                    source="ai",
+                )
+            return jsonify(response)
+        except CameraControllerError as e:
+            record_ai_error(str(e))
+            return camera_error_response(e)
+        except ActionExecutorError as e:
+            record_ai_error(str(e))
+            return jsonify({"error": str(e)}), 400
+        except OllamaClientError as e:
+            api_log(f"Ollama error: {e}")
+            record_ai_error(str(e))
+            return jsonify({"error": str(e), "ollama": ollama_client.get_status()}), e.status_code
+        except SafetySupervisorError as e:
+            api_log(f"Ollama safety execution error: {e}")
+            record_ai_error(str(e))
+            return jsonify({"error": str(e)}), 400
 
     @app.route("/motors", methods=["GET"])
     def list_motors():

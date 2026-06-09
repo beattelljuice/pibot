@@ -49,5 +49,13 @@
     "max_drive_power": 100,
     "max_action_ms": 1500,
     "max_stepper_steps": 500
+  },
+  "ollama": {
+    "enabled": true,
+    "url": "http://localhost:11434",
+    "model": "llava:latest",
+    "timeout_ms": 1500,
+    "include_camera": false,
+    "execute_actions": false
   }
 }

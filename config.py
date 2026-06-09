@@ -81,3 +81,17 @@ class Config:
                 "max_stepper_steps": 500,
             },
         )
+
+    def get_ollama_config(self) -> Dict[str, Any]:
+        """Get Ollama one-shot brain configuration."""
+        return self.data.get(
+            "ollama",
+            {
+                "enabled": False,
+                "url": "http://localhost:11434",
+                "model": "llava:latest",
+                "timeout_ms": 1500,
+                "include_camera": False,
+                "execute_actions": False,
+            },
+        )

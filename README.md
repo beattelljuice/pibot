@@ -76,6 +76,46 @@ curl -X POST http://localhost:5000/actions/propose \
 
 AI movement is allowed only while robot mode is `ai`. Safe non-movement actions such as OLED text and camera capture are allowed in paused or emergency-stop states.
 
+## Phase 4 Ollama One-Shot Brain
+
+Phase 4 adds an Ollama client and manual one-shot decision endpoint. It does not start an unattended AI loop yet.
+
+Run the standalone fake-Ollama test harness:
+
+```bash
+python3 phase4_test_harness.py
+```
+
+Configure Ollama in `config.json`:
+
+```json
+"ollama": {
+  "enabled": true,
+  "url": "http://localhost:11434",
+  "model": "llava:latest",
+  "timeout_ms": 1500,
+  "include_camera": false,
+  "execute_actions": false
+}
+```
+
+The one-shot endpoints are:
+
+```text
+GET  /ollama/status
+POST /ollama/decide
+```
+
+Example one-shot decision without executing movement:
+
+```bash
+curl -X POST http://localhost:5000/ollama/decide \
+  -H "Content-Type: application/json" \
+  -d '{"execute":false,"include_camera":false,"goal":"look around and describe a safe next action"}'
+```
+
+Set `"execute": true` only when the robot is in `ai` mode and you want proposed actions routed through the safety supervisor. The config default leaves `execute_actions` false so you can inspect model output first.
+
 ## USB Camera Setup
 
 Plug the USB camera into the Raspberry Pi before starting the server.
@@ -308,7 +348,10 @@ curl -X POST http://localhost:5000/robot/estop \
 - `gpio_controller.py` - Low-level GPIO control
 - `config.py` - Configuration loader
 - `config.json` - Motor configuration
+- `ollama_client.py` - Ollama one-shot AI decision client
 - `index.html` - Web UI controller
+- `phase3_test_harness.py` - Fake-hardware safety supervisor tests
+- `phase4_test_harness.py` - Fake-Ollama client tests
 - `requirements.txt` - Python dependencies
 
 ## Troubleshooting
