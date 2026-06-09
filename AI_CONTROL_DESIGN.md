@@ -442,9 +442,12 @@ Implemented as `ollama_client.py` plus:
 - Browser tester panel for one-shot decisions
 - Optional camera-frame attachment for vision-capable models
 - Optional supervised execution through `SafetySupervisor`
+- JSONL request/response logging at `logs/ollama_requests.jsonl`
 - `phase4_test_harness.py` for fake-Ollama validation
 
 The default config keeps `execute_actions` false, so the model can think and return proposed actions without moving the chassis. When `execute` is true on `/ollama/decide`, the API sends the returned `actions` list to the Phase 3 safety supervisor as source `ai`.
+
+Ollama logs are retrievable with `GET /ollama/logs`. Vision request images are summarized by default instead of storing full base64 frames.
 
 ### Phase 5: Add AI loop
 

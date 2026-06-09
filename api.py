@@ -345,6 +345,16 @@ def create_api(
         api_log("GET /ollama/status - Getting Ollama status")
         return jsonify(ollama_client.get_status())
 
+    @app.route("/ollama/logs", methods=["GET"])
+    def get_ollama_logs():
+        """Get recent Ollama request/response log entries."""
+        api_log("GET /ollama/logs - Getting Ollama request logs")
+        try:
+            limit = int(request.args.get("limit", 50))
+            return jsonify(ollama_client.read_request_log(limit=limit))
+        except ValueError:
+            return jsonify({"error": "limit must be an integer"}), 400
+
     @app.route("/ollama/decide", methods=["POST"])
     def ollama_decide():
         """Ask Ollama for one action proposal and optionally execute it safely."""

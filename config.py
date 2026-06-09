@@ -93,5 +93,10 @@ class Config:
                 "timeout_ms": 1500,
                 "include_camera": False,
                 "execute_actions": False,
+                "request_log": {
+                    "enabled": True,
+                    "path": "logs/ollama_requests.jsonl",
+                    "include_images": False,
+                },
             },
         )

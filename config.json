@@ -56,6 +56,11 @@
     "model": "minicpm-v4.6:1b",
     "timeout_ms": 1500,
     "include_camera": false,
-    "execute_actions": false
+    "execute_actions": false,
+    "request_log": {
+      "enabled": true,
+      "path": "logs/ollama_requests.jsonl",
+      "include_images": false
+    }
   }
 }

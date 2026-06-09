@@ -95,7 +95,12 @@ Configure Ollama in `config.json`:
   "model": "llava:latest",
   "timeout_ms": 1500,
   "include_camera": false,
-  "execute_actions": false
+  "execute_actions": false,
+  "request_log": {
+    "enabled": true,
+    "path": "logs/ollama_requests.jsonl",
+    "include_images": false
+  }
 }
 ```
 
@@ -103,6 +108,7 @@ The one-shot endpoints are:
 
 ```text
 GET  /ollama/status
+GET  /ollama/logs
 POST /ollama/decide
 ```
 
@@ -115,6 +121,14 @@ curl -X POST http://localhost:5000/ollama/decide \
 ```
 
 Set `"execute": true` only when the robot is in `ai` mode and you want proposed actions routed through the safety supervisor. The config default leaves `execute_actions` false so you can inspect model output first.
+
+Every Ollama decision request is logged as one JSON object per line in `logs/ollama_requests.jsonl`. The log records request payload, raw model response, parsed proposal, timing, model, URL, and errors. Camera image base64 is omitted by default and replaced with length plus SHA-256; set `"include_images": true` only if you explicitly want full image payloads written to disk.
+
+Retrieve recent entries through the API:
+
+```bash
+curl "http://localhost:5000/ollama/logs?limit=25"
+```
 
 ## USB Camera Setup
 

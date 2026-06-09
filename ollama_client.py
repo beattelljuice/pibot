@@ -5,6 +5,9 @@ import urllib.error
 import urllib.request
 from copy import deepcopy
 from datetime import datetime
+from hashlib import sha256
+from pathlib import Path
+from threading import RLock
 from typing import Any, Callable, Dict, Optional
 
 from robot_state import RobotState
@@ -57,6 +60,9 @@ class OllamaClient:
         timeout_ms: int = 1500,
         include_camera: bool = False,
         execute_actions: bool = False,
+        request_log_enabled: bool = True,
+        request_log_path: str = "logs/ollama_requests.jsonl",
+        request_log_include_images: bool = False,
         robot_state: Optional[RobotState] = None,
         transport: Optional[Callable[[Dict[str, Any], float], Dict[str, Any]]] = None,
     ):
@@ -66,17 +72,23 @@ class OllamaClient:
         self.timeout_ms = max(1, int(timeout_ms))
         self.include_camera = bool(include_camera)
         self.execute_actions = bool(execute_actions)
+        self.request_log_enabled = bool(request_log_enabled)
+        self.request_log_path = Path(request_log_path or "logs/ollama_requests.jsonl")
+        self.request_log_include_images = bool(request_log_include_images)
         self.robot_state = robot_state
         self.transport = transport
+        self._log_lock = RLock()
+        self._next_log_id = 1
         self._last_request_at: Optional[str] = None
         self._last_response_at: Optional[str] = None
         self._last_duration_ms: Optional[int] = None
         self._last_error: Optional[str] = None
+        self._last_log_error: Optional[str] = None
         self._last_proposal: Optional[Dict[str, Any]] = None
         ollama_log(
             "Initialized "
             f"enabled={self.enabled} url={self.url} model={self.model} "
-            f"timeout_ms={self.timeout_ms}"
+            f"timeout_ms={self.timeout_ms} log_path={self.request_log_path}"
         )
 
     def get_status(self) -> Dict[str, Any]:
@@ -89,6 +101,12 @@ class OllamaClient:
             "timeout_ms": self.timeout_ms,
             "include_camera": self.include_camera,
             "execute_actions": self.execute_actions,
+            "request_log": {
+                "enabled": self.request_log_enabled,
+                "path": str(self.request_log_path),
+                "include_images": self.request_log_include_images,
+                "last_error": self._last_log_error,
+            },
             "available_actions": list(AVAILABLE_ACTIONS),
             "last_request_at": self._last_request_at,
             "last_response_at": self._last_response_at,
@@ -154,6 +172,7 @@ class OllamaClient:
         payload = self.build_payload(robot_snapshot, operator_goal, image_b64)
         timeout_seconds = self.timeout_ms / 1000.0
         self._last_request_at = self._now()
+        request_at = self._last_request_at
         self._last_error = None
         start = time.monotonic()
 
@@ -173,24 +192,82 @@ class OllamaClient:
             self._last_error = None
             if self.robot_state:
                 self.robot_state.record_ai_response(proposal)
-            return {
+            result = {
                 "status": "success",
                 "model": self.model,
                 "duration_ms": duration_ms,
                 "proposal": proposal,
                 "raw": response,
             }
+            self._write_request_log(
+                request_at=request_at,
+                response_at=self._last_response_at,
+                duration_ms=duration_ms,
+                payload=payload,
+                response=response,
+                proposal=proposal,
+                error=None,
+            )
+            return result
         except OllamaClientError as e:
             self._record_error(str(e), start)
             if self.robot_state:
                 self.robot_state.record_ai_response(None, error=str(e))
+            self._write_request_log(
+                request_at=request_at,
+                response_at=self._last_response_at,
+                duration_ms=self._last_duration_ms,
+                payload=payload,
+                response=None,
+                proposal=None,
+                error=str(e),
+            )
             raise
         except Exception as e:
             message = f"Ollama request failed: {e}"
             self._record_error(message, start)
             if self.robot_state:
                 self.robot_state.record_ai_response(None, error=message)
+            self._write_request_log(
+                request_at=request_at,
+                response_at=self._last_response_at,
+                duration_ms=self._last_duration_ms,
+                payload=payload,
+                response=None,
+                proposal=None,
+                error=message,
+            )
             raise OllamaClientError(message) from e
+
+    def read_request_log(self, limit: int = 50) -> Dict[str, Any]:
+        """Return recent Ollama request log entries from the JSONL file."""
+        limit = max(1, min(500, int(limit)))
+        if not self.request_log_path.exists():
+            return {
+                "status": "success",
+                "path": str(self.request_log_path),
+                "entries": [],
+                "count": 0,
+            }
+
+        with self._log_lock:
+            lines = self.request_log_path.read_text(encoding="utf-8").splitlines()
+
+        entries = []
+        for line in lines[-limit:]:
+            if not line.strip():
+                continue
+            try:
+                entries.append(json.loads(line))
+            except json.JSONDecodeError:
+                entries.append({"malformed_log_line": line})
+
+        return {
+            "status": "success",
+            "path": str(self.request_log_path),
+            "entries": entries,
+            "count": len(entries),
+        }
 
     def _post_chat(
         self,
@@ -323,6 +400,77 @@ class OllamaClient:
         self._last_error = message
         self._last_proposal = None
         ollama_log(message)
+
+    def _write_request_log(
+        self,
+        request_at: Optional[str],
+        response_at: Optional[str],
+        duration_ms: Optional[int],
+        payload: Dict[str, Any],
+        response: Optional[Dict[str, Any]],
+        proposal: Optional[Dict[str, Any]],
+        error: Optional[str],
+    ) -> None:
+        if not self.request_log_enabled:
+            return
+
+        try:
+            with self._log_lock:
+                request_id = self._next_log_id
+                self._next_log_id += 1
+                event = {
+                    "event": "ollama_decision",
+                    "request_id": request_id,
+                    "request_at": request_at,
+                    "response_at": response_at,
+                    "duration_ms": duration_ms,
+                    "url": self.url,
+                    "model": self.model,
+                    "timeout_ms": self.timeout_ms,
+                    "status": "error" if error else "success",
+                    "error": error,
+                    "request": self._sanitize_for_log(payload),
+                    "response": self._sanitize_for_log(response),
+                    "proposal": deepcopy(proposal),
+                }
+                self.request_log_path.parent.mkdir(parents=True, exist_ok=True)
+                with self.request_log_path.open("a", encoding="utf-8") as f:
+                    f.write(json.dumps(event, separators=(",", ":"), default=str))
+                    f.write("\n")
+                self._last_log_error = None
+        except Exception as e:
+            self._last_log_error = str(e)
+            ollama_log(f"Request log write failed: {e}")
+
+    def _sanitize_for_log(self, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                key: self._sanitize_images(item) if key == "images" else self._sanitize_for_log(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [self._sanitize_for_log(item) for item in value]
+        return deepcopy(value)
+
+    def _sanitize_images(self, images: Any) -> Any:
+        if self.request_log_include_images:
+            return deepcopy(images)
+        if not isinstance(images, list):
+            return "<omitted non-list images payload>"
+
+        summaries = []
+        for image in images:
+            if isinstance(image, str):
+                summaries.append(
+                    {
+                        "omitted": True,
+                        "base64_chars": len(image),
+                        "sha256": sha256(image.encode("utf-8")).hexdigest(),
+                    }
+                )
+            else:
+                summaries.append({"omitted": True, "type": type(image).__name__})
+        return summaries
 
     def _now(self) -> str:
         return datetime.now().isoformat(timespec="milliseconds")

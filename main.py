@@ -179,6 +179,7 @@ def main() -> None:
 
         ollama_config = config.get_ollama_config()
         main_log("Initializing Ollama Client...")
+        ollama_log_config = ollama_config.get("request_log", {})
         ollama = OllamaClient(
             enabled=ollama_config.get("enabled", False),
             url=ollama_config.get("url", "http://localhost:11434"),
@@ -186,6 +187,12 @@ def main() -> None:
             timeout_ms=ollama_config.get("timeout_ms", 1500),
             include_camera=ollama_config.get("include_camera", False),
             execute_actions=ollama_config.get("execute_actions", False),
+            request_log_enabled=ollama_log_config.get("enabled", True),
+            request_log_path=ollama_log_config.get(
+                "path",
+                "logs/ollama_requests.jsonl",
+            ),
+            request_log_include_images=ollama_log_config.get("include_images", False),
             robot_state=robot_state,
         )
         if ollama.enabled:
