@@ -52,8 +52,8 @@
   },
   "ollama": {
     "enabled": true,
-    "url": "http://localhost:11434",
-    "model": "llava:latest",
+    "url": "http://10.0.0.9:11434",
+    "model": "minicpm-v4.6:1b",
     "timeout_ms": 1500,
     "include_camera": false,
     "execute_actions": false
