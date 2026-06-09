@@ -1,5 +1,6 @@
 from flask import Flask, Response, jsonify, request, send_file
 from action_executor import ActionExecutor, ActionExecutorError
+from ai_loop import AILoopController, AILoopError
 from base64 import b64encode
 from camera_controller import CameraController, CameraControllerError
 from display_controller import DisplayController, DisplayControllerError
@@ -25,6 +26,8 @@ def create_api(
     camera_controller: CameraController | None = None,
     safety_supervisor: SafetySupervisor | None = None,
     ollama_client: OllamaClient | None = None,
+    ai_loop_config: dict | None = None,
+    ai_loop_controller: AILoopController | None = None,
 ) -> Flask:
     """Create Flask API application."""
     app = Flask(__name__, static_folder='.', static_url_path='')
@@ -74,6 +77,8 @@ def create_api(
         snapshot["robot"]["camera"] = camera_controller.get_status()
         snapshot["robot"]["safety"] = safety_supervisor.get_status()
         snapshot["robot"]["ollama"] = ollama_client.get_status()
+        if ai_loop_controller is not None:
+            snapshot["robot"]["ai_loop"] = ai_loop_controller.get_status()
         return snapshot
 
     def display_error_response(error: DisplayControllerError):
@@ -108,6 +113,38 @@ def create_api(
             robot_state.record_ai_response(None, error=error)
         except Exception as e:
             api_log(f"AI error state update failed: {e}")
+
+    def capture_ai_camera_frame():
+        jpeg_bytes, meta = camera_controller.capture_jpeg()
+        record_camera_capture(meta)
+        return (
+            b64encode(jpeg_bytes).decode("ascii"),
+            {
+                **meta,
+                "encoding": "base64",
+                "included_in_prompt": True,
+            },
+        )
+
+    ai_loop_config = ai_loop_config or {}
+    if ai_loop_controller is None:
+        ai_loop_controller = AILoopController(
+            robot_state=robot_state,
+            action_executor=action_executor,
+            safety_supervisor=safety_supervisor,
+            ollama_client=ollama_client,
+            snapshot_provider=get_robot_snapshot,
+            camera_frame_provider=capture_ai_camera_frame,
+            enabled_on_start=ai_loop_config.get("enabled_on_start", False),
+            decision_interval_ms=ai_loop_config.get("decision_interval_ms", 1000),
+            idle_interval_ms=ai_loop_config.get("idle_interval_ms", 250),
+            error_backoff_ms=ai_loop_config.get("error_backoff_ms", 3000),
+            include_camera=ai_loop_config.get("include_camera", False),
+            execute_actions=ai_loop_config.get("execute_actions", True),
+            require_ai_mode=ai_loop_config.get("require_ai_mode", True),
+            stop_on_error=ai_loop_config.get("stop_on_error", True),
+            max_consecutive_errors=ai_loop_config.get("max_consecutive_errors", 3),
+        )
 
     @app.route('/')
     def serve_ui():
@@ -182,6 +219,91 @@ def create_api(
             return jsonify(robot_state.set_emergency_stop(False))
         except RobotStateError as e:
             api_log(f"State error: {e}")
+            return jsonify({"error": str(e)}), 400
+
+    @app.route("/ai/status", methods=["GET"])
+    def get_ai_status():
+        """Get autonomous AI loop status."""
+        api_log("GET /ai/status - Getting AI loop status")
+        return jsonify(ai_loop_controller.get_status())
+
+    @app.route("/ai/start", methods=["POST"])
+    def start_ai_loop():
+        """Start autonomous AI decisions through the safety supervisor."""
+        api_log(f"POST /ai/start - Request body: {request.get_json(silent=True)}")
+        try:
+            data = get_json_body()
+            result = ai_loop_controller.start(
+                goal=data.get("goal"),
+                include_camera=data.get("include_camera"),
+                execute_actions=data.get("execute_actions"),
+                decision_interval_ms=data.get("decision_interval_ms"),
+                set_ai_mode=bool(
+                    data.get(
+                        "set_ai_mode",
+                        ai_loop_config.get("set_ai_mode_on_start", True),
+                    )
+                ),
+            )
+            return jsonify(result)
+        except (ActionExecutorError, AILoopError, RobotStateError) as e:
+            api_log(f"AI loop start error: {e}")
+            return jsonify({"error": str(e), "ai": ai_loop_controller.get_status()}), 400
+
+    @app.route("/ai/stop", methods=["POST"])
+    def stop_ai_loop():
+        """Stop autonomous AI decisions and optionally stop all motors."""
+        api_log(f"POST /ai/stop - Request body: {request.get_json(silent=True)}")
+        try:
+            data = get_json_body()
+            stop_motors = bool(data.get("stop_motors", True))
+            return jsonify(ai_loop_controller.stop(stop_motors=stop_motors))
+        except ActionExecutorError as e:
+            api_log(f"AI loop stop error: {e}")
+            return jsonify({"error": str(e), "ai": ai_loop_controller.get_status()}), 400
+
+    @app.route("/ai/goal", methods=["POST"])
+    def set_ai_goal():
+        """Set the current AI/operator goal."""
+        api_log(f"POST /ai/goal - Request body: {request.get_json(silent=True)}")
+        try:
+            data = get_json_body()
+            goal = data.get("goal", data.get("operator_request", ""))
+            return jsonify(robot_state.set_goal(goal))
+        except (ActionExecutorError, RobotStateError) as e:
+            api_log(f"AI goal error: {e}")
+            return jsonify({"error": str(e)}), 400
+
+    @app.route("/ai/estop", methods=["POST"])
+    def ai_estop():
+        """Stop the AI loop and activate emergency stop."""
+        api_log(f"POST /ai/estop - Request body: {request.get_json(silent=True)}")
+        try:
+            data = get_json_body()
+            ai_loop_controller.stop(stop_motors=True)
+            reason = data.get("reason", "ai emergency stop")
+            state_result = robot_state.set_emergency_stop(True, reason)
+            stop_result = action_executor.stop_all(source="ai_estop")
+            return jsonify(
+                {
+                    "status": "success",
+                    "robot": state_result,
+                    "stop": stop_result,
+                    "ai": ai_loop_controller.get_status(),
+                }
+            )
+        except (ActionExecutorError, RobotStateError) as e:
+            api_log(f"AI estop error: {e}")
+            return jsonify({"error": str(e)}), 400
+
+    @app.route("/ai/estop/clear", methods=["POST"])
+    def clear_ai_estop():
+        """Clear emergency stop and leave robot paused."""
+        api_log("POST /ai/estop/clear - Clearing emergency stop")
+        try:
+            return jsonify(robot_state.set_emergency_stop(False))
+        except RobotStateError as e:
+            api_log(f"AI estop clear error: {e}")
             return jsonify({"error": str(e)}), 400
 
     @app.route("/robot/sensors/<name>", methods=["POST"])

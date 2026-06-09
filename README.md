@@ -154,6 +154,62 @@ curl -X POST http://localhost:5000/ollama/translate \
   -d '{"execute":false}'
 ```
 
+## Phase 5 Autonomous AI Loop
+
+Phase 5 adds a supervised background loop that repeatedly asks Ollama for decisions and routes every returned action through the safety supervisor.
+
+Run the fake-hardware loop test harness:
+
+```bash
+python3 phase5_test_harness.py
+```
+
+Configure the loop in `config.json`:
+
+```json
+"ai_loop": {
+  "enabled_on_start": false,
+  "decision_interval_ms": 1000,
+  "idle_interval_ms": 250,
+  "error_backoff_ms": 3000,
+  "include_camera": true,
+  "execute_actions": true,
+  "require_ai_mode": true,
+  "set_ai_mode_on_start": true,
+  "stop_on_error": true,
+  "max_consecutive_errors": 3
+}
+```
+
+Loop endpoints:
+
+```text
+GET  /ai/status
+POST /ai/start
+POST /ai/stop
+POST /ai/goal
+POST /ai/estop
+POST /ai/estop/clear
+```
+
+Start the loop:
+
+```bash
+curl -X POST http://localhost:5000/ai/start \
+  -H "Content-Type: application/json" \
+  -d '{"goal":"move slowly toward the doorway","include_camera":true,"execute_actions":true,"set_ai_mode":true}'
+```
+
+Stop the loop and stop all motors:
+
+```bash
+curl -X POST http://localhost:5000/ai/stop \
+  -H "Content-Type: application/json" \
+  -d '{"stop_motors":true}'
+```
+
+The browser tester includes an `Autonomous AI Loop` panel. Start with wheels lifted and use short goals. The loop stops issuing model requests when the robot leaves `ai` mode or emergency stop is active.
+
 ## USB Camera Setup
 
 Plug the USB camera into the Raspberry Pi before starting the server.

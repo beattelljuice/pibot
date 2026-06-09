@@ -203,6 +203,8 @@ def main() -> None:
         else:
             main_log("Ollama Client disabled")
 
+        ai_loop_config = config.get_ai_loop_config()
+
         api_config = config.get_api_config()
         main_log("")
         main_log("=" * 60)
@@ -215,7 +217,16 @@ def main() -> None:
         main_log("=" * 60)
         main_log("")
 
-        app = create_api(manager, executor, robot_state, display, camera, safety, ollama)
+        app = create_api(
+            manager,
+            executor,
+            robot_state,
+            display,
+            camera,
+            safety,
+            ollama,
+            ai_loop_config=ai_loop_config,
+        )
 
         signal.signal(signal.SIGINT, handle_signal)
         signal.signal(signal.SIGTERM, handle_signal)

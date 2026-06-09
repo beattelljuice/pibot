@@ -630,6 +630,7 @@
                     <span class="status-chip" id="chip-camera">Camera: --</span>
                     <span class="status-chip" id="chip-safety">Safety: --</span>
                     <span class="status-chip" id="chip-ollama">Ollama: --</span>
+                    <span class="status-chip" id="chip-ai-loop">AI Loop: --</span>
                 </div>
             </div>
 
@@ -828,6 +829,29 @@
                 </div>
 
                 <div class="runtime-card state-card">
+                    <h3>Autonomous AI Loop</h3>
+                    <div class="runtime-row">
+                        <label class="runtime-check" for="ai-loop-include-camera">
+                            <input type="checkbox" id="ai-loop-include-camera" checked>
+                            Include camera
+                        </label>
+                        <label class="runtime-check" for="ai-loop-execute-actions">
+                            <input type="checkbox" id="ai-loop-execute-actions" checked>
+                            Execute actions
+                        </label>
+                    </div>
+                    <label for="ai-loop-interval">Minimum Decision Interval ms</label>
+                    <input type="number" id="ai-loop-interval" value="1000" min="250">
+                    <div class="runtime-actions">
+                        <button class="btn btn-forward" onclick="startAiLoop()">Start Loop</button>
+                        <button class="btn btn-stop" onclick="stopAiLoop()">Stop Loop</button>
+                        <button class="btn btn-primary" onclick="refreshAiStatus()">AI Status</button>
+                        <button class="btn btn-stop" onclick="aiEstop()">AI E-Stop</button>
+                    </div>
+                    <pre class="state-json" id="ai-loop-result-json">No AI loop result yet.</pre>
+                </div>
+
+                <div class="runtime-card state-card">
                     <h3>Robot State</h3>
                     <pre class="state-json" id="robot-state-json">No state loaded.</pre>
                 </div>
@@ -963,6 +987,7 @@
             const cameraChip = document.getElementById('chip-camera');
             const safetyChip = document.getElementById('chip-safety');
             const ollamaChip = document.getElementById('chip-ollama');
+            const aiLoopChip = document.getElementById('chip-ai-loop');
 
             if (!state || !state.robot) {
                 setChip(modeChip, 'Mode: --');
@@ -973,6 +998,7 @@
                 setChip(cameraChip, 'Camera: --');
                 setChip(safetyChip, 'Safety: --');
                 setChip(ollamaChip, 'Ollama: --');
+                setChip(aiLoopChip, 'AI Loop: --');
                 return;
             }
 
@@ -984,6 +1010,7 @@
             const camera = state.robot.camera;
             const safety = state.robot.safety;
             const ollama = state.robot.ollama;
+            const aiLoop = state.robot.ai_loop;
 
             setChip(modeChip, `Mode: ${mode}`, mode === 'ai' ? 'warn' : mode === 'estop' ? 'danger' : 'good');
             setChip(estopChip, `E-Stop: ${estop ? 'Active' : 'Clear'}`, estop ? 'danger' : 'good');
@@ -1008,6 +1035,11 @@
                 ollamaChip,
                 `Ollama: ${ollama && ollama.enabled ? (ollama.last_error ? 'Error' : 'Ready') : 'Disabled'}`,
                 ollama && ollama.enabled ? (ollama.last_error ? 'danger' : 'good') : 'warn'
+            );
+            setChip(
+                aiLoopChip,
+                `AI Loop: ${aiLoop && aiLoop.running ? 'Running' : 'Stopped'}`,
+                aiLoop && aiLoop.running ? 'warn' : 'good'
             );
         }
 
@@ -1608,6 +1640,100 @@
                     output.textContent = JSON.stringify({ status: 'error', error: error.message }, null, 2);
                 }
                 showError(`Failed to retry JSON translation: ${error.message}`);
+            }
+        }
+
+        async function refreshAiStatus() {
+            const output = document.getElementById('ai-loop-result-json');
+            try {
+                const result = await apiRequest('/ai/status');
+                if (output) {
+                    output.textContent = JSON.stringify(result, null, 2);
+                }
+                await refreshRobotState();
+                clearError();
+            } catch (error) {
+                console.error('Error refreshing AI loop status:', error);
+                showError(`Failed to refresh AI loop status: ${error.message}`);
+            }
+        }
+
+        async function startAiLoop() {
+            const output = document.getElementById('ai-loop-result-json');
+            const goalInput = document.getElementById('runtime-goal');
+            const goal = goalInput ? goalInput.value : '';
+            const includeCamera = Boolean(document.getElementById('ai-loop-include-camera')?.checked);
+            const executeActions = Boolean(document.getElementById('ai-loop-execute-actions')?.checked);
+            const decisionIntervalMs = Math.floor(getNumberInput('ai-loop-interval', 1000));
+
+            if (!goal.trim()) {
+                showError('Set an operator goal before starting the AI loop');
+                return;
+            }
+
+            try {
+                if (output) {
+                    output.textContent = 'Starting AI loop...';
+                }
+                const result = await apiRequest('/ai/start', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        goal,
+                        include_camera: includeCamera,
+                        execute_actions: executeActions,
+                        decision_interval_ms: decisionIntervalMs,
+                        set_ai_mode: true
+                    })
+                });
+                if (output) {
+                    output.textContent = JSON.stringify(result, null, 2);
+                }
+                await refreshRobotState();
+                clearError();
+            } catch (error) {
+                console.error('Error starting AI loop:', error);
+                if (output) {
+                    output.textContent = JSON.stringify({ status: 'error', error: error.message }, null, 2);
+                }
+                showError(`Failed to start AI loop: ${error.message}`);
+            }
+        }
+
+        async function stopAiLoop() {
+            const output = document.getElementById('ai-loop-result-json');
+            try {
+                const result = await apiRequest('/ai/stop', {
+                    method: 'POST',
+                    body: JSON.stringify({ stop_motors: true })
+                });
+                if (output) {
+                    output.textContent = JSON.stringify(result, null, 2);
+                }
+                await refreshRobotState();
+                await updateMotorStatus();
+                clearError();
+            } catch (error) {
+                console.error('Error stopping AI loop:', error);
+                showError(`Failed to stop AI loop: ${error.message}`);
+            }
+        }
+
+        async function aiEstop() {
+            const output = document.getElementById('ai-loop-result-json');
+            try {
+                const result = await apiRequest('/ai/estop', {
+                    method: 'POST',
+                    body: JSON.stringify({ reason: 'ai loop tester' })
+                });
+                if (output) {
+                    output.textContent = JSON.stringify(result, null, 2);
+                }
+                await refreshRobotState();
+                await updateMotorStatus();
+                clearError();
+            } catch (error) {
+                console.error('Error activating AI emergency stop:', error);
+                showError(`Failed to activate AI emergency stop: ${error.message}`);
             }
         }
 

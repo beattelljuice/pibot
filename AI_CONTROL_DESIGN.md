@@ -458,7 +458,7 @@ Ollama logs are retrievable with `GET /ollama/logs`. Two-stage calls produce sep
 
 Run the AI loop in a background thread.
 
-API endpoints to add:
+Implemented as `ai_loop.py` plus:
 
 - `GET /ai/status`
 - `POST /ai/start`
@@ -466,6 +466,8 @@ API endpoints to add:
 - `POST /ai/goal`
 - `POST /ai/estop`
 - `POST /ai/estop/clear`
+
+The loop repeatedly builds the robot snapshot, optionally captures a camera frame, calls the two-stage Ollama brain, and sends returned actions through `SafetySupervisor` as source `ai`. It waits when the robot is not in `ai` mode, stops motors on loop stop, and stops after repeated errors.
 
 ### Phase 6: Add real sensors
 

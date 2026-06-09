@@ -103,3 +103,21 @@ class Config:
                 },
             },
         )
+
+    def get_ai_loop_config(self) -> Dict[str, Any]:
+        """Get autonomous AI loop configuration."""
+        return self.data.get(
+            "ai_loop",
+            {
+                "enabled_on_start": False,
+                "decision_interval_ms": 1000,
+                "idle_interval_ms": 250,
+                "error_backoff_ms": 3000,
+                "include_camera": True,
+                "execute_actions": True,
+                "require_ai_mode": True,
+                "set_ai_mode_on_start": True,
+                "stop_on_error": True,
+                "max_consecutive_errors": 3,
+            },
+        )
