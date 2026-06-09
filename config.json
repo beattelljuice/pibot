@@ -56,7 +56,7 @@
     "model": "minicpm-v4.6:1b",
     "two_stage": true,
     "translator_model": "cogito:3b",
-    "translator_timeout_ms": 15000,
+    "translator_timeout_ms": 60000,
     "timeout_ms": 60000,
     "include_camera": true,
     "execute_actions": false,
