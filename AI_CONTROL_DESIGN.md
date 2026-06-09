@@ -438,6 +438,7 @@ Create an `OllamaBrain` module that:
 Implemented as `ollama_client.py` plus:
 
 - `GET /ollama/status`
+- `POST /ollama/translate`
 - `POST /ollama/decide`
 - Browser tester panel for one-shot decisions
 - Optional camera-frame attachment for vision-capable models
@@ -447,7 +448,9 @@ Implemented as `ollama_client.py` plus:
 
 The default config keeps `execute_actions` false, so the model can think and return proposed actions without moving the chassis. When `execute` is true on `/ollama/decide`, the API sends the returned `actions` list to the Phase 3 safety supervisor as source `ai`.
 
-Ollama logs are retrievable with `GET /ollama/logs`. Vision request images are summarized by default instead of storing full base64 frames.
+The one-shot decision path can run in two stages. The planner model handles expensive reasoning and optional image input, producing plain-English intent. The translator model converts that cached intent to strict JSON. If translation fails, `POST /ollama/translate` retries only the translator stage.
+
+Ollama logs are retrievable with `GET /ollama/logs`. Two-stage calls produce separate planner and translator log entries. Vision request images are summarized by default instead of storing full base64 frames.
 
 ### Phase 5: Add AI loop
 

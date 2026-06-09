@@ -821,6 +821,8 @@
                         <button class="btn btn-primary" onclick="refreshOllamaLogs()">Logs</button>
                         <button class="btn btn-primary" onclick="ollamaDecide(false)">Decide</button>
                         <button class="btn btn-forward" onclick="ollamaDecide(true)">Decide + Execute</button>
+                        <button class="btn btn-primary" onclick="ollamaTranslate(false)">Retry JSON</button>
+                        <button class="btn btn-forward" onclick="ollamaTranslate(true)">Retry JSON + Execute</button>
                     </div>
                     <pre class="state-json" id="ollama-result-json">No Ollama result yet.</pre>
                 </div>
@@ -1571,6 +1573,41 @@
                     output.textContent = JSON.stringify({ status: 'error', error: error.message }, null, 2);
                 }
                 showError(`Failed to get Ollama decision: ${error.message}`);
+            }
+        }
+
+        async function ollamaTranslate(execute) {
+            const output = document.getElementById('ollama-result-json');
+
+            try {
+                if (output) {
+                    output.textContent = 'Retrying JSON translation...';
+                }
+                const result = await apiRequest('/ollama/translate', {
+                    method: 'POST',
+                    body: JSON.stringify({ execute })
+                });
+                if (output) {
+                    output.textContent = JSON.stringify(result, null, 2);
+                }
+
+                const proposalInput = document.getElementById('proposal-json');
+                const actions = result.decision && result.decision.proposal
+                    ? result.decision.proposal.actions
+                    : null;
+                if (proposalInput && Array.isArray(actions)) {
+                    proposalInput.value = JSON.stringify({ source: 'ai', actions }, null, 2);
+                }
+
+                await refreshRobotState();
+                await updateMotorStatus();
+                clearError();
+            } catch (error) {
+                console.error('Error retrying Ollama JSON translation:', error);
+                if (output) {
+                    output.textContent = JSON.stringify({ status: 'error', error: error.message }, null, 2);
+                }
+                showError(`Failed to retry JSON translation: ${error.message}`);
             }
         }
 

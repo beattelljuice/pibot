@@ -91,9 +91,12 @@ Configure Ollama in `config.json`:
 ```json
 "ollama": {
   "enabled": true,
-  "url": "http://localhost:11434",
-  "model": "llava:latest",
-  "timeout_ms": 1500,
+  "url": "http://10.0.0.9:11434",
+  "model": "minicpm-v4.6:1b",
+  "two_stage": true,
+  "translator_model": "qwen2.5:0.5b",
+  "translator_timeout_ms": 15000,
+  "timeout_ms": 60000,
   "include_camera": false,
   "execute_actions": false,
   "request_log": {
@@ -110,6 +113,7 @@ The one-shot endpoints are:
 GET  /ollama/status
 GET  /ollama/logs
 POST /ollama/decide
+POST /ollama/translate
 ```
 
 Example one-shot decision without executing movement:
@@ -122,7 +126,15 @@ curl -X POST http://localhost:5000/ollama/decide \
 
 Set `"execute": true` only when the robot is in `ai` mode and you want proposed actions routed through the safety supervisor. The config default leaves `execute_actions` false so you can inspect model output first.
 
-Every Ollama decision request is logged as one JSON object per line in `logs/ollama_requests.jsonl`. The log records request payload, raw model response, parsed proposal, timing, model, URL, and errors. Camera image base64 is omitted by default and replaced with length plus SHA-256; set `"include_images": true` only if you explicitly want full image payloads written to disk.
+With `"two_stage": true`, `/ollama/decide` makes two model calls. The planner model reads the full robot state and optional image, then writes a plain-English intent. The translator model reads that intent and returns strict action JSON. If translation fails, call `/ollama/translate` to retry only the cheap JSON translation stage without rerunning the image/planning request.
+
+The configured `translator_model` must exist on the Ollama server. Install it on the Ollama computer or change the config to a text model you already have:
+
+```bash
+ollama pull qwen2.5:0.5b
+```
+
+Every Ollama model request is logged as one JSON object per line in `logs/ollama_requests.jsonl`. Two-stage decisions create separate `ollama_planner` and `ollama_translator` entries. The log records request payload, raw model response, parsed proposal, timing, model, URL, intent, and errors. Camera image base64 is omitted by default and replaced with length plus SHA-256; set `"include_images": true` only if you explicitly want full image payloads written to disk.
 
 `Decide + Execute` requires a non-empty operator goal. This avoids sending the model an empty task and then executing a no-op or ambiguous action proposal.
 
@@ -130,6 +142,14 @@ Retrieve recent entries through the API:
 
 ```bash
 curl "http://localhost:5000/ollama/logs?limit=25"
+```
+
+Retry the cached intent translation:
+
+```bash
+curl -X POST http://localhost:5000/ollama/translate \
+  -H "Content-Type: application/json" \
+  -d '{"execute":false}'
 ```
 
 ## USB Camera Setup

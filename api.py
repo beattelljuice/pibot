@@ -420,6 +420,40 @@ def create_api(
             record_ai_error(str(e))
             return jsonify({"error": str(e)}), 400
 
+    @app.route("/ollama/translate", methods=["POST"])
+    def ollama_translate_last_intent():
+        """Retry JSON translation from the cached planner intent."""
+        api_log(
+            f"POST /ollama/translate - Request body: {request.get_json(silent=True)}"
+        )
+        try:
+            data = get_json_body()
+            execute = bool(data.get("execute", False))
+            decision = ollama_client.translate_last_intent()
+            response = {
+                "status": "success",
+                "execute": execute,
+                "ollama": ollama_client.get_status(),
+                "decision": decision,
+            }
+            if execute:
+                response["safety"] = safety_supervisor.propose(
+                    decision["proposal"]["actions"],
+                    source="ai",
+                )
+            return jsonify(response)
+        except ActionExecutorError as e:
+            record_ai_error(str(e))
+            return jsonify({"error": str(e)}), 400
+        except OllamaClientError as e:
+            api_log(f"Ollama translation retry error: {e}")
+            record_ai_error(str(e))
+            return jsonify({"error": str(e), "ollama": ollama_client.get_status()}), e.status_code
+        except SafetySupervisorError as e:
+            api_log(f"Ollama retry safety execution error: {e}")
+            record_ai_error(str(e))
+            return jsonify({"error": str(e)}), 400
+
     @app.route("/motors", methods=["GET"])
     def list_motors():
         """List all motors and their current state."""

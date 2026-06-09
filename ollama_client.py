@@ -34,6 +34,26 @@ Return exactly this JSON shape:
 {"speech":"short status sentence","actions":[],"next_check_ms":500}
 """
 
+PLANNER_PROMPT = """You are the high-level reasoning layer for a physical robot chassis.
+Think from the robot's current state, camera image if present, sensors, and operator goal.
+Write a concise plain-English intent for what should happen next.
+Do not return JSON.
+Do not invent sensors, motors, actions, or hardware limits.
+If the goal is empty, ambiguous, unsafe, or impossible, say that no physical action should be taken.
+Mention only actions that can be represented by available_actions.
+For movement, specify cautious short-duration motion only.
+"""
+
+TRANSLATOR_PROMPT = """You translate a robot intent into strict robot action JSON.
+You must only return valid JSON.
+You may only use the actions listed in available_actions.
+Do not invent sensors, motors, actions, or hardware limits.
+If the intent is ambiguous, unsafe, impossible, or says no physical action, return an empty actions list.
+All movement must be short-duration and cautious.
+Return exactly this JSON shape:
+{"speech":"short status sentence","actions":[],"next_check_ms":500}
+"""
+
 
 class OllamaClientError(RuntimeError):
     """Raised when the Ollama decision request cannot produce a valid proposal."""
@@ -57,6 +77,9 @@ class OllamaClient:
         enabled: bool = False,
         url: str = "http://localhost:11434",
         model: str = "llava:latest",
+        two_stage: bool = True,
+        translator_model: Optional[str] = None,
+        translator_timeout_ms: Optional[int] = None,
         timeout_ms: int = 1500,
         include_camera: bool = False,
         execute_actions: bool = False,
@@ -69,6 +92,12 @@ class OllamaClient:
         self.enabled = bool(enabled)
         self.url = str(url or "http://localhost:11434").rstrip("/")
         self.model = str(model or "llava:latest")
+        self.two_stage = bool(two_stage)
+        self.translator_model = str(translator_model or self.model)
+        self.translator_timeout_ms = max(
+            1,
+            int(translator_timeout_ms if translator_timeout_ms is not None else timeout_ms),
+        )
         self.timeout_ms = max(1, int(timeout_ms))
         self.include_camera = bool(include_camera)
         self.execute_actions = bool(execute_actions)
@@ -84,10 +113,13 @@ class OllamaClient:
         self._last_duration_ms: Optional[int] = None
         self._last_error: Optional[str] = None
         self._last_log_error: Optional[str] = None
+        self._last_intent: Optional[Dict[str, Any]] = None
+        self._last_translation_context: Optional[Dict[str, Any]] = None
         self._last_proposal: Optional[Dict[str, Any]] = None
         ollama_log(
             "Initialized "
             f"enabled={self.enabled} url={self.url} model={self.model} "
+            f"two_stage={self.two_stage} translator_model={self.translator_model} "
             f"timeout_ms={self.timeout_ms} log_path={self.request_log_path}"
         )
 
@@ -98,7 +130,11 @@ class OllamaClient:
             "enabled": self.enabled,
             "url": self.url,
             "model": self.model,
+            "two_stage": self.two_stage,
+            "planner_model": self.model,
+            "translator_model": self.translator_model,
             "timeout_ms": self.timeout_ms,
+            "translator_timeout_ms": self.translator_timeout_ms,
             "include_camera": self.include_camera,
             "execute_actions": self.execute_actions,
             "request_log": {
@@ -112,6 +148,7 @@ class OllamaClient:
             "last_response_at": self._last_response_at,
             "last_duration_ms": self._last_duration_ms,
             "last_error": self._last_error,
+            "last_intent": deepcopy(self._last_intent),
             "last_proposal": deepcopy(self._last_proposal),
         }
 
@@ -159,6 +196,91 @@ class OllamaClient:
             ],
         }
 
+    def build_planner_payload(
+        self,
+        robot_snapshot: Dict[str, Any],
+        operator_goal: Optional[str] = None,
+        image_b64: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Build the first-stage planner payload for plain-English intent."""
+        if not isinstance(robot_snapshot, dict):
+            raise OllamaClientError("robot_snapshot must be a JSON object", 400)
+
+        goal = operator_goal
+        if goal is None:
+            goal = robot_snapshot.get("robot", {}).get("operator_goal", "")
+        if not isinstance(goal, str):
+            raise OllamaClientError("operator goal must be a string", 400)
+
+        user_payload = {
+            "operator_goal": goal,
+            "available_actions": list(AVAILABLE_ACTIONS),
+            "robot_snapshot": self._build_model_snapshot(robot_snapshot),
+            "instruction": (
+                "Write a short plain-English intent describing what the robot "
+                "should do next. Do not write JSON."
+            ),
+        }
+
+        user_message: Dict[str, Any] = {
+            "role": "user",
+            "content": json.dumps(user_payload, separators=(",", ":"), sort_keys=True),
+        }
+        if image_b64:
+            user_message["images"] = [image_b64]
+
+        return {
+            "model": self.model,
+            "stream": False,
+            "messages": [
+                {"role": "system", "content": PLANNER_PROMPT},
+                user_message,
+            ],
+        }
+
+    def build_translator_payload(
+        self,
+        intent_text: str,
+        operator_goal: str,
+        model_snapshot: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Build the second-stage translator payload for strict action JSON."""
+        if not isinstance(intent_text, str) or not intent_text.strip():
+            raise OllamaClientError("intent_text must be a non-empty string", 400)
+        if not isinstance(operator_goal, str):
+            raise OllamaClientError("operator goal must be a string", 400)
+        if not isinstance(model_snapshot, dict):
+            raise OllamaClientError("model_snapshot must be a JSON object", 400)
+
+        user_payload = {
+            "operator_goal": operator_goal,
+            "available_actions": list(AVAILABLE_ACTIONS),
+            "planner_intent": intent_text,
+            "robot_snapshot": model_snapshot,
+            "output_schema": {
+                "speech": "string",
+                "actions": "array of allowed action objects",
+                "next_check_ms": "integer milliseconds before next decision",
+            },
+        }
+
+        return {
+            "model": self.translator_model,
+            "stream": False,
+            "format": "json",
+            "messages": [
+                {"role": "system", "content": TRANSLATOR_PROMPT},
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        user_payload,
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ),
+                },
+            ],
+        }
+
     def decide(
         self,
         robot_snapshot: Dict[str, Any],
@@ -168,7 +290,34 @@ class OllamaClient:
         """Ask Ollama for one robot action proposal."""
         if not self.enabled:
             raise OllamaClientError("Ollama client is disabled")
+        if self.two_stage:
+            return self._decide_two_stage(robot_snapshot, operator_goal, image_b64)
 
+        return self._decide_single_stage(robot_snapshot, operator_goal, image_b64)
+
+    def translate_last_intent(self) -> Dict[str, Any]:
+        """Retry only the JSON translation stage using the cached planner intent."""
+        if not self.enabled:
+            raise OllamaClientError("Ollama client is disabled")
+        if not self._last_intent or not self._last_translation_context:
+            raise OllamaClientError("No cached planner intent is available", 400)
+
+        context = deepcopy(self._last_translation_context)
+        return self._translate_intent(
+            intent_text=self._last_intent["intent"],
+            operator_goal=context["operator_goal"],
+            model_snapshot=context["model_snapshot"],
+            start_total=time.monotonic(),
+            planning_result=None,
+            source="retry",
+        )
+
+    def _decide_single_stage(
+        self,
+        robot_snapshot: Dict[str, Any],
+        operator_goal: Optional[str] = None,
+        image_b64: Optional[str] = None,
+    ) -> Dict[str, Any]:
         payload = self.build_payload(robot_snapshot, operator_goal, image_b64)
         timeout_seconds = self.timeout_ms / 1000.0
         self._last_request_at = self._now()
@@ -181,7 +330,7 @@ class OllamaClient:
             response = (
                 self.transport(payload, timeout_seconds)
                 if self.transport is not None
-                else self._post_chat(payload, timeout_seconds)
+                else self._post_chat(payload, timeout_seconds, self.timeout_ms)
             )
             duration_ms = int((time.monotonic() - start) * 1000)
             content = self._extract_content(response)
@@ -201,6 +350,9 @@ class OllamaClient:
                 "raw": response,
             }
             self._write_request_log(
+                event="ollama_decision",
+                stage="single_stage",
+                model=self.model,
                 request_at=request_at,
                 response_at=self._last_response_at,
                 duration_ms=duration_ms,
@@ -215,6 +367,9 @@ class OllamaClient:
             if self.robot_state:
                 self.robot_state.record_ai_response(None, error=str(e))
             self._write_request_log(
+                event="ollama_decision",
+                stage="single_stage",
+                model=self.model,
                 request_at=request_at,
                 response_at=self._last_response_at,
                 duration_ms=self._last_duration_ms,
@@ -230,12 +385,242 @@ class OllamaClient:
             if self.robot_state:
                 self.robot_state.record_ai_response(None, error=message)
             self._write_request_log(
+                event="ollama_decision",
+                stage="single_stage",
+                model=self.model,
                 request_at=request_at,
                 response_at=self._last_response_at,
                 duration_ms=self._last_duration_ms,
                 payload=payload,
                 response=response,
                 proposal=None,
+                error=message,
+            )
+            raise OllamaClientError(message) from e
+
+    def _decide_two_stage(
+        self,
+        robot_snapshot: Dict[str, Any],
+        operator_goal: Optional[str] = None,
+        image_b64: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        model_snapshot = self._build_model_snapshot(robot_snapshot)
+        goal = operator_goal
+        if goal is None:
+            goal = robot_snapshot.get("robot", {}).get("operator_goal", "")
+        if not isinstance(goal, str):
+            raise OllamaClientError("operator goal must be a string", 400)
+
+        payload = self.build_planner_payload(robot_snapshot, goal, image_b64)
+        timeout_seconds = self.timeout_ms / 1000.0
+        self._last_request_at = self._now()
+        request_at = self._last_request_at
+        self._last_error = None
+        response = None
+        start = time.monotonic()
+
+        try:
+            response = (
+                self.transport(payload, timeout_seconds)
+                if self.transport is not None
+                else self._post_chat(payload, timeout_seconds, self.timeout_ms)
+            )
+            duration_ms = int((time.monotonic() - start) * 1000)
+            intent_text = self._extract_content(response).strip()
+            if not intent_text:
+                raise OllamaClientError("Ollama planner returned empty intent", 502)
+
+            response_at = self._now()
+            self._last_intent = {
+                "intent": intent_text,
+                "model": self.model,
+                "operator_goal": goal,
+                "created_at": response_at,
+                "duration_ms": duration_ms,
+                "image_attached": bool(image_b64),
+            }
+            self._last_translation_context = {
+                "operator_goal": goal,
+                "model_snapshot": deepcopy(model_snapshot),
+            }
+            planning_result = {
+                "status": "success",
+                "model": self.model,
+                "duration_ms": duration_ms,
+                "intent": intent_text,
+                "raw": response,
+            }
+            self._write_request_log(
+                event="ollama_planner",
+                stage="planner",
+                model=self.model,
+                request_at=request_at,
+                response_at=response_at,
+                duration_ms=duration_ms,
+                payload=payload,
+                response=response,
+                proposal=None,
+                intent=intent_text,
+                error=None,
+            )
+        except OllamaClientError as e:
+            self._record_error(str(e), start)
+            if self.robot_state:
+                self.robot_state.record_ai_response(None, error=str(e))
+            self._write_request_log(
+                event="ollama_planner",
+                stage="planner",
+                model=self.model,
+                request_at=request_at,
+                response_at=self._last_response_at,
+                duration_ms=self._last_duration_ms,
+                payload=payload,
+                response=response,
+                proposal=None,
+                intent=None,
+                error=str(e),
+            )
+            raise
+        except Exception as e:
+            message = f"Ollama planner request failed: {e}"
+            self._record_error(message, start)
+            if self.robot_state:
+                self.robot_state.record_ai_response(None, error=message)
+            self._write_request_log(
+                event="ollama_planner",
+                stage="planner",
+                model=self.model,
+                request_at=request_at,
+                response_at=self._last_response_at,
+                duration_ms=self._last_duration_ms,
+                payload=payload,
+                response=response,
+                proposal=None,
+                intent=None,
+                error=message,
+            )
+            raise OllamaClientError(message) from e
+
+        return self._translate_intent(
+            intent_text=intent_text,
+            operator_goal=goal,
+            model_snapshot=model_snapshot,
+            start_total=start,
+            planning_result=planning_result,
+            source="fresh",
+        )
+
+    def _translate_intent(
+        self,
+        intent_text: str,
+        operator_goal: str,
+        model_snapshot: Dict[str, Any],
+        start_total: float,
+        planning_result: Optional[Dict[str, Any]],
+        source: str,
+    ) -> Dict[str, Any]:
+        payload = self.build_translator_payload(intent_text, operator_goal, model_snapshot)
+        timeout_seconds = self.translator_timeout_ms / 1000.0
+        request_at = self._now()
+        response = None
+        start = time.monotonic()
+
+        try:
+            response = (
+                self.transport(payload, timeout_seconds)
+                if self.transport is not None
+                else self._post_chat(payload, timeout_seconds, self.translator_timeout_ms)
+            )
+            duration_ms = int((time.monotonic() - start) * 1000)
+            content = self._extract_content(response)
+            parsed = self._parse_json_content(content)
+            proposal = self._validate_proposal(parsed)
+            response_at = self._now()
+            total_duration_ms = int((time.monotonic() - start_total) * 1000)
+            self._last_response_at = response_at
+            self._last_duration_ms = total_duration_ms
+            self._last_proposal = deepcopy(proposal)
+            self._last_error = None
+            if self.robot_state:
+                self.robot_state.record_ai_response(
+                    {
+                        "intent": intent_text,
+                        "proposal": proposal,
+                        "mode": "two_stage",
+                    }
+                )
+            self._write_request_log(
+                event="ollama_translator",
+                stage="translator",
+                model=self.translator_model,
+                request_at=request_at,
+                response_at=response_at,
+                duration_ms=duration_ms,
+                payload=payload,
+                response=response,
+                proposal=proposal,
+                intent=intent_text,
+                error=None,
+            )
+            return {
+                "status": "success",
+                "mode": "two_stage",
+                "source": source,
+                "model": self.model,
+                "planner_model": self.model,
+                "translator_model": self.translator_model,
+                "duration_ms": total_duration_ms,
+                "intent": intent_text,
+                "proposal": proposal,
+                "planning": planning_result,
+                "translation": {
+                    "status": "success",
+                    "model": self.translator_model,
+                    "duration_ms": duration_ms,
+                    "raw": response,
+                },
+            }
+        except OllamaClientError as e:
+            message = f"Ollama translation failed: {e}"
+            self._record_error(message, start_total)
+            if self.robot_state:
+                self.robot_state.record_ai_response(
+                    {"intent": intent_text, "mode": "two_stage"},
+                    error=message,
+                )
+            self._write_request_log(
+                event="ollama_translator",
+                stage="translator",
+                model=self.translator_model,
+                request_at=request_at,
+                response_at=self._last_response_at,
+                duration_ms=int((time.monotonic() - start) * 1000),
+                payload=payload,
+                response=response,
+                proposal=None,
+                intent=intent_text,
+                error=message,
+            )
+            raise OllamaClientError(message, e.status_code) from e
+        except Exception as e:
+            message = f"Ollama translator request failed: {e}"
+            self._record_error(message, start_total)
+            if self.robot_state:
+                self.robot_state.record_ai_response(
+                    {"intent": intent_text, "mode": "two_stage"},
+                    error=message,
+                )
+            self._write_request_log(
+                event="ollama_translator",
+                stage="translator",
+                model=self.translator_model,
+                request_at=request_at,
+                response_at=self._last_response_at,
+                duration_ms=int((time.monotonic() - start) * 1000),
+                payload=payload,
+                response=response,
+                proposal=None,
+                intent=intent_text,
                 error=message,
             )
             raise OllamaClientError(message) from e
@@ -274,6 +659,7 @@ class OllamaClient:
         self,
         payload: Dict[str, Any],
         timeout_seconds: float,
+        timeout_ms: Optional[int] = None,
     ) -> Dict[str, Any]:
         request = urllib.request.Request(
             f"{self.url}/api/chat",
@@ -294,8 +680,11 @@ class OllamaClient:
             reason = getattr(e, "reason", e)
             raise OllamaClientError(f"Ollama unavailable: {reason}") from e
         except socket.timeout as e:
+            effective_timeout_ms = (
+                int(timeout_ms) if timeout_ms is not None else int(timeout_seconds * 1000)
+            )
             raise OllamaClientError(
-                f"Ollama timed out after {self.timeout_ms} ms",
+                f"Ollama timed out after {effective_timeout_ms} ms",
                 504,
             ) from e
 
@@ -470,13 +859,17 @@ class OllamaClient:
 
     def _write_request_log(
         self,
+        event: str,
+        stage: str,
+        model: str,
         request_at: Optional[str],
         response_at: Optional[str],
         duration_ms: Optional[int],
         payload: Dict[str, Any],
         response: Optional[Dict[str, Any]],
         proposal: Optional[Dict[str, Any]],
-        error: Optional[str],
+        intent: Optional[str] = None,
+        error: Optional[str] = None,
     ) -> None:
         if not self.request_log_enabled:
             return
@@ -486,16 +879,22 @@ class OllamaClient:
                 request_id = self._next_log_id
                 self._next_log_id += 1
                 event = {
-                    "event": "ollama_decision",
+                    "event": event,
+                    "stage": stage,
                     "request_id": request_id,
                     "request_at": request_at,
                     "response_at": response_at,
                     "duration_ms": duration_ms,
                     "url": self.url,
-                    "model": self.model,
-                    "timeout_ms": self.timeout_ms,
+                    "model": model,
+                    "timeout_ms": (
+                        self.translator_timeout_ms
+                        if stage == "translator"
+                        else self.timeout_ms
+                    ),
                     "status": "error" if error else "success",
                     "error": error,
+                    "intent": intent,
                     "request": self._sanitize_for_log(payload),
                     "response": self._sanitize_for_log(response),
                     "proposal": deepcopy(proposal),

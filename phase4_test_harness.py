@@ -33,18 +33,32 @@ def make_snapshot():
     }
 
 
-def make_client(content, capture=None):
+def make_client(contents, capture=None, two_stage=True):
+    if isinstance(contents, list):
+        response_contents = list(contents)
+    else:
+        response_contents = [contents]
+    call_index = {"value": 0}
+
     def transport(payload, timeout_seconds):
+        index = min(call_index["value"], len(response_contents) - 1)
+        call_index["value"] += 1
         if capture is not None:
+            capture.setdefault("calls", []).append(
+                {"payload": payload, "timeout_seconds": timeout_seconds}
+            )
             capture["payload"] = payload
             capture["timeout_seconds"] = timeout_seconds
-        return {"message": {"content": content}}
+        return {"message": {"content": response_contents[index]}}
 
     return OllamaClient(
         enabled=True,
         url="http://ollama.test:11434",
-        model="test-model",
+        model="planner-test-model",
+        two_stage=two_stage,
+        translator_model="translator-test-model",
         timeout_ms=1200,
+        translator_timeout_ms=800,
         request_log_enabled=False,
         transport=transport,
     )
@@ -52,16 +66,21 @@ def make_client(content, capture=None):
 
 def test_decide_parses_strict_json():
     client = make_client(
-        json.dumps(
-            {
-                "speech": "I see a clear path.",
-                "actions": [{"type": "display_text", "text": "clear"}],
-                "next_check_ms": 250,
-            }
-        )
+        [
+            "Show the word clear on the OLED display and do not move.",
+            json.dumps(
+                {
+                    "speech": "I see a clear path.",
+                    "actions": [{"type": "display_text", "text": "clear"}],
+                    "next_check_ms": 250,
+                }
+            ),
+        ]
     )
     result = client.decide(make_snapshot())
     assert result["status"] == "success"
+    assert result["mode"] == "two_stage"
+    assert result["intent"] == "Show the word clear on the OLED display and do not move."
     assert result["proposal"]["speech"] == "I see a clear path."
     assert result["proposal"]["actions"][0]["type"] == "display_text"
     assert result["proposal"]["next_check_ms"] == 250
@@ -69,7 +88,10 @@ def test_decide_parses_strict_json():
 
 def test_decide_recovers_wrapped_json():
     client = make_client(
-        'Here is the decision: {"speech":"holding","actions":[],"next_check_ms":300}'
+        [
+            "Hold position.",
+            'Here is the decision: {"speech":"holding","actions":[],"next_check_ms":300}',
+        ]
     )
     result = client.decide(make_snapshot())
     assert result["proposal"]["speech"] == "holding"
@@ -78,7 +100,12 @@ def test_decide_recovers_wrapped_json():
 
 
 def test_missing_actions_rejected():
-    client = make_client('{"speech":"missing action list","next_check_ms":300}')
+    client = make_client(
+        [
+            "Hold position.",
+            '{"speech":"missing action list","next_check_ms":300}',
+        ]
+    )
     try:
         client.decide(make_snapshot())
     except OllamaClientError as e:
@@ -89,7 +116,12 @@ def test_missing_actions_rejected():
 
 
 def test_action_must_be_object():
-    client = make_client('{"speech":"bad action","actions":["drive"],"next_check_ms":300}')
+    client = make_client(
+        [
+            "Drive forward.",
+            '{"speech":"bad action","actions":["drive"],"next_check_ms":300}',
+        ]
+    )
     try:
         client.decide(make_snapshot())
     except OllamaClientError as e:
@@ -104,8 +136,8 @@ def test_payload_includes_camera_image():
         model="test-model",
         request_log_enabled=False,
     )
-    payload = client.build_payload(make_snapshot(), image_b64="abc123")
-    assert payload["format"] == "json"
+    payload = client.build_planner_payload(make_snapshot(), image_b64="abc123")
+    assert "format" not in payload
     assert payload["stream"] is False
     assert payload["messages"][1]["images"] == ["abc123"]
 
@@ -113,12 +145,17 @@ def test_payload_includes_camera_image():
 def test_transport_receives_timeout_and_goal_override():
     capture = {}
     client = make_client(
-        '{"speech":"goal acknowledged","actions":[],"next_check_ms":500}',
+        [
+            "Acknowledge the goal without moving.",
+            '{"speech":"goal acknowledged","actions":[],"next_check_ms":500}',
+        ],
         capture=capture,
     )
     client.decide(make_snapshot(), operator_goal="inspect the doorway")
-    assert capture["timeout_seconds"] == 1.2
-    user_payload = json.loads(capture["payload"]["messages"][1]["content"])
+    assert len(capture["calls"]) == 2
+    assert capture["calls"][0]["timeout_seconds"] == 1.2
+    assert capture["calls"][1]["timeout_seconds"] == 0.8
+    user_payload = json.loads(capture["calls"][0]["payload"]["messages"][1]["content"])
     assert user_payload["operator_goal"] == "inspect the doorway"
     assert "drive_tank" in user_payload["available_actions"]
 
@@ -152,12 +189,44 @@ def test_disabled_client_rejected():
 
 def test_robot_state_records_success():
     state = RobotState()
-    client = make_client('{"speech":"stored","actions":[],"next_check_ms":500}')
+    client = make_client(
+        [
+            "Store a no-op intent.",
+            '{"speech":"stored","actions":[],"next_check_ms":500}',
+        ]
+    )
     client.robot_state = state
     client.decide(make_snapshot())
     snapshot = state.snapshot()
-    assert snapshot["memory"]["last_ai_response"]["response"]["speech"] == "stored"
+    response = snapshot["memory"]["last_ai_response"]["response"]
+    assert response["mode"] == "two_stage"
+    assert response["proposal"]["speech"] == "stored"
     assert snapshot["memory"]["last_ai_response"]["error"] is None
+
+
+def test_retry_translation_uses_cached_intent_without_planner():
+    capture = {}
+    client = make_client(
+        [
+            "Write retry on the OLED.",
+            '{"speech":"bad json","actions":',
+            '{"speech":"retry ok","actions":[{"type":"display_text","text":"retry"}],"next_check_ms":500}',
+        ],
+        capture=capture,
+    )
+    try:
+        client.decide(make_snapshot())
+    except OllamaClientError:
+        pass
+    else:
+        raise AssertionError("bad first translation should be rejected")
+
+    retry = client.translate_last_intent()
+    assert retry["source"] == "retry"
+    assert retry["intent"] == "Write retry on the OLED."
+    assert retry["proposal"]["actions"][0]["text"] == "retry"
+    assert len(capture["calls"]) == 3
+    assert capture["calls"][2]["payload"]["model"] == "translator-test-model"
 
 
 def test_request_log_records_success_and_omits_images():
@@ -166,17 +235,26 @@ def test_request_log_records_success_and_omits_images():
         log_path.unlink()
 
     try:
-        client = make_client('{"speech":"logged","actions":[],"next_check_ms":500}')
+        client = make_client(
+            [
+                "Log a no-op intent.",
+                '{"speech":"logged","actions":[],"next_check_ms":500}',
+            ]
+        )
         client.request_log_enabled = True
         client.request_log_path = log_path
         client.decide(make_snapshot(), image_b64="abc123")
         log = client.read_request_log(limit=5)
-        assert log["count"] == 1
-        entry = log["entries"][0]
-        assert entry["status"] == "success"
-        assert entry["proposal"]["speech"] == "logged"
-        assert entry["request"]["messages"][1]["images"][0]["omitted"] is True
-        assert entry["request"]["messages"][1]["images"][0]["base64_chars"] == 6
+        assert log["count"] == 2
+        planner_entry = log["entries"][0]
+        translator_entry = log["entries"][1]
+        assert planner_entry["event"] == "ollama_planner"
+        assert planner_entry["status"] == "success"
+        assert planner_entry["intent"] == "Log a no-op intent."
+        assert planner_entry["request"]["messages"][1]["images"][0]["omitted"] is True
+        assert planner_entry["request"]["messages"][1]["images"][0]["base64_chars"] == 6
+        assert translator_entry["event"] == "ollama_translator"
+        assert translator_entry["proposal"]["speech"] == "logged"
     finally:
         if log_path.exists():
             log_path.unlink()
@@ -188,7 +266,12 @@ def test_request_log_records_raw_response_on_parse_error():
         log_path.unlink()
 
     try:
-        client = make_client('{"speech" "bad json","actions":[],"next_check_ms":500}')
+        client = make_client(
+            [
+                "Translate this into bad JSON first.",
+                '{"speech" "bad json","actions":[],"next_check_ms":500}',
+            ]
+        )
         client.request_log_enabled = True
         client.request_log_path = log_path
         try:
@@ -199,8 +282,9 @@ def test_request_log_records_raw_response_on_parse_error():
             raise AssertionError("bad model JSON should be rejected")
 
         log = client.read_request_log(limit=5)
-        assert log["count"] == 1
-        entry = log["entries"][0]
+        assert log["count"] == 2
+        entry = log["entries"][1]
+        assert entry["event"] == "ollama_translator"
         assert entry["status"] == "error"
         assert entry["response"]["message"]["content"].startswith('{"speech" "bad json"')
     finally:
@@ -218,6 +302,7 @@ TESTS = [
     test_model_snapshot_omits_internal_ollama_status,
     test_disabled_client_rejected,
     test_robot_state_records_success,
+    test_retry_translation_uses_cached_intent_without_planner,
     test_request_log_records_success_and_omits_images,
     test_request_log_records_raw_response_on_parse_error,
 ]
