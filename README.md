@@ -71,7 +71,7 @@ Example proposal:
 ```bash
 curl -X POST http://localhost:5000/actions/propose \
   -H "Content-Type: application/json" \
-  -d '{"source":"ai","actions":[{"type":"drive_tank","left_power":25,"right_power":25,"duration_ms":300}]}'
+  -d '{"source":"ai","actions":[{"type":"drive_tank","left_power":45,"right_power":45,"duration_ms":700}]}'
 ```
 
 AI movement is allowed only while robot mode is `ai`. Safe non-movement actions such as OLED text and camera capture are allowed in paused or emergency-stop states.
@@ -130,7 +130,19 @@ With `"two_stage": true`, `/ollama/decide` makes two model calls. The planner mo
 
 The prompts and payload include an action reference. Chassis navigation uses `drive_tank` and `rotate`; `stepper_move` is marked as arm-only and should not be used to move toward a doorway or destination.
 
-If the translator returns valid JSON with an empty `actions` list while the planner intent clearly names a safe allowed action, the runtime applies a conservative deterministic fallback before safety validation. Examples: `drive_tank` or "drive the chassis forward" becomes a short low-power `drive_tank`; "rotate the chassis" becomes a short low-power `rotate`. The fallback still goes through `SafetySupervisor`.
+If the translator returns valid JSON with an empty `actions` list while the planner intent clearly names an allowed action, the runtime applies a deterministic fallback before safety validation. Examples: `drive_tank` or "drive the chassis forward" becomes a bounded `drive_tank`; "rotate the chassis" becomes a bounded `rotate`. The fallback uses the configured Ollama `movement_profile`, then still goes through `SafetySupervisor`.
+
+Tune the AI's normal movement strength in `config.json`:
+
+```json
+"movement_profile": {
+  "default_drive_power": 45,
+  "minimum_effective_drive_power": 35,
+  "default_drive_ms": 700,
+  "default_rotate_power": 45,
+  "default_rotate_ms": 500
+}
+```
 
 The configured `translator_model` must exist on the Ollama server. Install it on the Ollama computer or change the config to a text model you already have:
 
@@ -199,7 +211,7 @@ Start the loop:
 ```bash
 curl -X POST http://localhost:5000/ai/start \
   -H "Content-Type: application/json" \
-  -d '{"goal":"move slowly toward the doorway","include_camera":true,"execute_actions":true,"set_ai_mode":true}'
+  -d '{"goal":"move toward the doorway with practical short movements","include_camera":true,"execute_actions":true,"set_ai_mode":true}'
 ```
 
 Stop the loop and stop all motors:
@@ -373,14 +385,14 @@ curl -X POST http://localhost:5000/motors/left_motor/stop
 ```bash
 curl -X POST http://localhost:5000/actions/drive_tank \
   -H "Content-Type: application/json" \
-  -d '{"left_power": 25, "right_power": 25, "duration_ms": 300}'
+  -d '{"left_power": 45, "right_power": 45, "duration_ms": 700}'
 ```
 
 **Timed chassis rotate:**
 ```bash
 curl -X POST http://localhost:5000/actions/rotate \
   -H "Content-Type: application/json" \
-  -d '{"power": 25, "direction": "left", "duration_ms": 300}'
+  -d '{"power": 45, "direction": "left", "duration_ms": 500}'
 ```
 
 **Stop all motors:**
@@ -402,7 +414,7 @@ curl http://localhost:5000/robot/state
 ```bash
 curl -X POST http://localhost:5000/robot/goal \
   -H "Content-Type: application/json" \
-  -d '{"goal": "explore slowly and avoid obstacles"}'
+  -d '{"goal": "explore with practical short movements and stop if blocked"}'
 ```
 
 **Set robot mode:**

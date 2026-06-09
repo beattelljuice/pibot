@@ -493,7 +493,7 @@
                 <section class="panel">
                     <h2>Goal And Mode</h2>
                     <label for="runtime-goal">Goal</label>
-                    <textarea id="runtime-goal" placeholder="move slowly toward the doorway"></textarea>
+                    <textarea id="runtime-goal" placeholder="move toward the doorway with practical short movements"></textarea>
                     <div class="row">
                         <div>
                             <label for="runtime-mode">Mode</label>
@@ -559,15 +559,15 @@
                     <div class="row">
                         <div>
                             <label for="drive-left">Left Power</label>
-                            <input id="drive-left" type="number" value="20" min="-100" max="100">
+                            <input id="drive-left" type="number" value="45" min="-100" max="100">
                         </div>
                         <div>
                             <label for="drive-right">Right Power</label>
-                            <input id="drive-right" type="number" value="20" min="-100" max="100">
+                            <input id="drive-right" type="number" value="45" min="-100" max="100">
                         </div>
                     </div>
                     <label for="drive-duration">Duration ms</label>
-                    <input id="drive-duration" type="number" value="300" min="1">
+                    <input id="drive-duration" type="number" value="700" min="1">
                     <div class="actions">
                         <button class="good" onclick="driveTankAction()">Drive</button>
                         <button class="danger" onclick="stopAllActions()">Stop All</button>
@@ -575,7 +575,7 @@
                     <div class="row" style="margin-top:12px;">
                         <div>
                             <label for="rotate-power">Rotate Power</label>
-                            <input id="rotate-power" type="number" value="20" min="1" max="100">
+                            <input id="rotate-power" type="number" value="45" min="1" max="100">
                         </div>
                         <div>
                             <label for="rotate-direction">Direction</label>
@@ -586,7 +586,7 @@
                         </div>
                     </div>
                     <label for="rotate-duration">Rotate Duration ms</label>
-                    <input id="rotate-duration" type="number" value="250" min="1">
+                    <input id="rotate-duration" type="number" value="500" min="1">
                     <div class="actions">
                         <button onclick="rotateAction()">Rotate</button>
                     </div>
@@ -775,6 +775,7 @@
 
             const aiLoop = robot.ai_loop || {};
             const ollama = robot.ollama || {};
+            const movementProfile = ollama.movement_profile || {};
             const safety = robot.safety || {};
             const requestLog = ollama.request_log || {};
             const limits = safety.limits || {};
@@ -786,6 +787,7 @@
                 ['Goal', robot.operator_goal || '--'],
                 ['Ollama', ollama.enabled ? `${ollama.model || '--'} at ${ollama.url || '--'}` : 'disabled'],
                 ['Translator', ollama.two_stage ? `${ollama.translator_model || '--'} (${ollama.translator_timeout_ms ?? '--'} ms timeout)` : 'single-stage'],
+                ['AI movement', `drive ${movementProfile.default_drive_power ?? '--'}% for ${movementProfile.default_drive_ms ?? '--'} ms, rotate ${movementProfile.default_rotate_power ?? '--'}% for ${movementProfile.default_rotate_ms ?? '--'} ms`],
                 ['Request log', requestLog.enabled ? requestLog.path || 'enabled' : 'disabled'],
                 ['Safety limits', `drive ${limits.max_drive_power ?? '--'}%, action ${limits.max_action_ms ?? '--'} ms, stepper ${limits.max_stepper_steps ?? '--'} steps`],
                 ['Last Ollama error', ollama.last_error || '--'],
@@ -1110,9 +1112,9 @@
                 await apiRequest('/actions/drive_tank', {
                     method: 'POST',
                     body: JSON.stringify({
-                        left_power: getNumberInput('drive-left', 20),
-                        right_power: getNumberInput('drive-right', 20),
-                        duration_ms: getNumberInput('drive-duration', 300)
+                        left_power: getNumberInput('drive-left', 45),
+                        right_power: getNumberInput('drive-right', 45),
+                        duration_ms: getNumberInput('drive-duration', 700)
                     })
                 });
                 await refreshRobotState();
@@ -1127,9 +1129,9 @@
                 await apiRequest('/actions/rotate', {
                     method: 'POST',
                     body: JSON.stringify({
-                        power: getNumberInput('rotate-power', 20),
+                        power: getNumberInput('rotate-power', 45),
                         direction: document.getElementById('rotate-direction').value,
-                        duration_ms: getNumberInput('rotate-duration', 250)
+                        duration_ms: getNumberInput('rotate-duration', 500)
                     })
                 });
                 await refreshRobotState();

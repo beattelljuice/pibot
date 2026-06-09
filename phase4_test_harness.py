@@ -194,6 +194,26 @@ def test_action_reference_marks_steppers_as_arm_only():
     assert "correct that hardware mistake" in translator_payload["messages"][0]["content"]
 
 
+def test_payload_includes_movement_profile():
+    client = OllamaClient(
+        enabled=True,
+        model="test-model",
+        request_log_enabled=False,
+        movement_profile={
+            "default_drive_power": 55,
+            "minimum_effective_drive_power": 40,
+            "default_drive_ms": 900,
+            "default_rotate_power": 50,
+            "default_rotate_ms": 650,
+        },
+    )
+    payload = client.build_planner_payload(make_snapshot())
+    user_payload = json.loads(payload["messages"][1]["content"])
+    assert user_payload["movement_profile"]["default_drive_power"] == 55
+    assert user_payload["action_reference"]["drive_tank"]["example"]["left_power"] == 55
+    assert user_payload["action_reference"]["rotate"]["example"]["duration_ms"] == 650
+
+
 def test_disabled_client_rejected():
     client = OllamaClient(
         enabled=False,
@@ -261,9 +281,9 @@ def test_empty_translation_gets_drive_fallback_from_intent():
     action = result["proposal"]["actions"][0]
     assert result["fallback_action"] == action
     assert action["type"] == "drive_tank"
-    assert action["left_power"] == 20
-    assert action["right_power"] == 20
-    assert action["duration_ms"] == 300
+    assert action["left_power"] == 45
+    assert action["right_power"] == 45
+    assert action["duration_ms"] == 700
 
 
 def test_empty_translation_gets_rotate_fallback_from_intent():
@@ -276,8 +296,8 @@ def test_empty_translation_gets_rotate_fallback_from_intent():
     result = client.decide(make_snapshot(), operator_goal="face the doorway")
     action = result["proposal"]["actions"][0]
     assert action["type"] == "rotate"
-    assert action["power"] == 20
-    assert action["duration_ms"] == 250
+    assert action["power"] == 45
+    assert action["duration_ms"] == 500
 
 
 def test_empty_translation_respects_no_action_intent():
@@ -364,6 +384,7 @@ TESTS = [
     test_transport_receives_timeout_and_goal_override,
     test_model_snapshot_omits_internal_ollama_status,
     test_action_reference_marks_steppers_as_arm_only,
+    test_payload_includes_movement_profile,
     test_disabled_client_rejected,
     test_robot_state_records_success,
     test_retry_translation_uses_cached_intent_without_planner,

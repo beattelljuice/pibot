@@ -101,6 +101,13 @@ class Config:
                     "path": "logs/ollama_requests.jsonl",
                     "include_images": False,
                 },
+                "movement_profile": {
+                    "default_drive_power": 45,
+                    "minimum_effective_drive_power": 35,
+                    "default_drive_ms": 700,
+                    "default_rotate_power": 45,
+                    "default_rotate_ms": 500,
+                },
             },
         )
 

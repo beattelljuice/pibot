@@ -31,19 +31,13 @@ ACTION_REFERENCE = {
         "schema": {"type": "stop_all"},
     },
     "drive_tank": {
-        "purpose": "Move the chassis forward, backward, or along a gentle arc by powering the left and right drive motors.",
+        "purpose": "Move the chassis forward, backward, or along an arc by powering the left and right drive motors.",
         "movement": "chassis",
         "schema": {
             "type": "drive_tank",
             "left_power": "number from -100 to 100",
             "right_power": "number from -100 to 100",
-            "duration_ms": "short duration, max safety limit applies",
-        },
-        "example": {
-            "type": "drive_tank",
-            "left_power": 20,
-            "right_power": 20,
-            "duration_ms": 300,
+            "duration_ms": "bounded duration, max safety limit applies",
         },
     },
     "rotate": {
@@ -53,13 +47,7 @@ ACTION_REFERENCE = {
             "type": "rotate",
             "power": "positive number",
             "direction": "left or right",
-            "duration_ms": "short duration, max safety limit applies",
-        },
-        "example": {
-            "type": "rotate",
-            "power": 20,
-            "direction": "left",
-            "duration_ms": 250,
+            "duration_ms": "bounded duration, max safety limit applies",
         },
     },
     "stepper_move": {
@@ -92,8 +80,10 @@ ACTION_REFERENCE = {
 SYSTEM_PROMPT = """You are the decision layer for a physical robot chassis.
 You must only return valid JSON.
 You may only use the actions listed in available_actions.
-All movement must be short-duration and cautious.
-If sensor data is stale, unsafe, or missing, stop or wait by returning no movement actions.
+All movement must be bounded and intentional.
+Use movement_profile for practical chassis powers and durations. Avoid tiny pulses that will not overcome motor deadzone.
+Do not require extra sensors to move when the camera, robot state, and operator goal are sufficient.
+If the scene or goal is unsafe, blocked, or ambiguous, stop or wait by returning no movement actions.
 Never invent sensors, motors, actions, or hardware limits.
 Use drive_tank or rotate for chassis movement. Never use stepper_move for navigation; stepper_move is arm-only.
 The robot runtime validates every action before execution.
@@ -109,8 +99,8 @@ Do not invent sensors, motors, actions, or hardware limits.
 If the goal is empty, ambiguous, unsafe, or impossible, say that no physical action should be taken.
 Mention only actions that can be represented by available_actions.
 Use drive_tank or rotate for chassis movement. Never use stepper_move for navigation; stepper_move is arm-only.
-If the goal is to move toward a doorway or destination, describe cautious chassis movement, not arm movement.
-For movement, specify cautious short-duration motion only.
+If the goal is to move toward a doorway or destination, describe chassis movement, not arm movement.
+For movement, specify bounded but effective chassis motion using movement_profile. Avoid ineffective tiny nudges.
 """
 
 TRANSLATOR_PROMPT = """You translate a robot intent into strict robot action JSON.
@@ -119,8 +109,8 @@ You may only use the actions listed in available_actions.
 Do not invent sensors, motors, actions, or hardware limits.
 If the intent is ambiguous, unsafe, impossible, or says no physical action, return an empty actions list.
 Use drive_tank or rotate for chassis movement. Never use stepper_move for navigation; stepper_move is arm-only.
-If an intent says to move the robot toward a doorway using stepper movement, correct that hardware mistake by using cautious chassis drive_tank or rotate actions instead of stepper_move.
-All movement must be short-duration and cautious.
+If an intent says to move the robot toward a doorway using stepper movement, correct that hardware mistake by using chassis drive_tank or rotate actions instead of stepper_move.
+All movement must be bounded but effective. Use movement_profile values unless the intent clearly requires a smaller adjustment.
 Return exactly this JSON shape:
 {"speech":"short status sentence","actions":[],"next_check_ms":500}
 """
@@ -157,6 +147,7 @@ class OllamaClient:
         request_log_enabled: bool = True,
         request_log_path: str = "logs/ollama_requests.jsonl",
         request_log_include_images: bool = False,
+        movement_profile: Optional[Dict[str, Any]] = None,
         robot_state: Optional[RobotState] = None,
         transport: Optional[Callable[[Dict[str, Any], float], Dict[str, Any]]] = None,
     ):
@@ -175,6 +166,7 @@ class OllamaClient:
         self.request_log_enabled = bool(request_log_enabled)
         self.request_log_path = Path(request_log_path or "logs/ollama_requests.jsonl")
         self.request_log_include_images = bool(request_log_include_images)
+        self.movement_profile = self._normalize_movement_profile(movement_profile)
         self.robot_state = robot_state
         self.transport = transport
         self._log_lock = RLock()
@@ -214,6 +206,7 @@ class OllamaClient:
                 "include_images": self.request_log_include_images,
                 "last_error": self._last_log_error,
             },
+            "movement_profile": deepcopy(self.movement_profile),
             "available_actions": list(AVAILABLE_ACTIONS),
             "last_request_at": self._last_request_at,
             "last_response_at": self._last_response_at,
@@ -243,6 +236,7 @@ class OllamaClient:
             "operator_goal": goal,
             "available_actions": list(AVAILABLE_ACTIONS),
             "action_reference": self._action_reference(),
+            "movement_profile": deepcopy(self.movement_profile),
             "robot_snapshot": self._build_model_snapshot(robot_snapshot),
             "output_schema": {
                 "speech": "string",
@@ -288,6 +282,7 @@ class OllamaClient:
             "operator_goal": goal,
             "available_actions": list(AVAILABLE_ACTIONS),
             "action_reference": self._action_reference(),
+            "movement_profile": deepcopy(self.movement_profile),
             "robot_snapshot": self._build_model_snapshot(robot_snapshot),
             "instruction": (
                 "Write a short plain-English intent describing what the robot "
@@ -329,6 +324,7 @@ class OllamaClient:
             "operator_goal": operator_goal,
             "available_actions": list(AVAILABLE_ACTIONS),
             "action_reference": self._action_reference(),
+            "movement_profile": deepcopy(self.movement_profile),
             "planner_intent": intent_text,
             "robot_snapshot": model_snapshot,
             "output_schema": {
@@ -875,7 +871,7 @@ class OllamaClient:
         intent_text: str,
         operator_goal: str,
     ) -> Optional[Dict[str, Any]]:
-        """Create a conservative action when translation returns no actions."""
+        """Create a bounded deterministic action when translation returns no actions."""
         if proposal.get("actions"):
             return None
 
@@ -916,12 +912,12 @@ class OllamaClient:
             return {"type": "camera_capture"}
 
         if "drive_tank" in text:
-            power = -20 if self._contains_any(text, ["backward", "reverse", "back up"]) else 20
+            power = self._fallback_drive_power(text)
             return {
                 "type": "drive_tank",
                 "left_power": power,
                 "right_power": power,
-                "duration_ms": 300,
+                "duration_ms": self.movement_profile["default_drive_ms"],
             }
 
         if self._contains_any(text, ["rotate", "turn", "face"]):
@@ -932,9 +928,9 @@ class OllamaClient:
                 direction = "left"
             return {
                 "type": "rotate",
-                "power": 20,
+                "power": self.movement_profile["default_rotate_power"],
                 "direction": direction,
-                "duration_ms": 250,
+                "duration_ms": self.movement_profile["default_rotate_ms"],
             }
 
         if self._contains_any(
@@ -952,16 +948,12 @@ class OllamaClient:
                 "explore",
             ],
         ):
-            power = 20
-            if self._contains_any(text, ["slow", "slowly", "gentle", "gently", "cautious"]):
-                power = 15
-            if self._contains_any(text, ["backward", "reverse", "back up"]):
-                power = -power
+            power = self._fallback_drive_power(text)
             return {
                 "type": "drive_tank",
                 "left_power": power,
                 "right_power": power,
-                "duration_ms": 300,
+                "duration_ms": self.movement_profile["default_drive_ms"],
             }
 
         return None
@@ -989,12 +981,23 @@ class OllamaClient:
     def _contains_any(self, text: str, needles: list) -> bool:
         return any(needle in text for needle in needles)
 
+    def _fallback_drive_power(self, text: str) -> int:
+        profile = self.movement_profile
+        power = profile["default_drive_power"]
+        if self._contains_any(text, ["slow", "slowly", "gentle", "gently", "cautious", "careful"]):
+            power = profile["minimum_effective_drive_power"]
+        if self._contains_any(text, ["fast", "faster", "strong", "stronger", "more power"]):
+            power = min(100, max(power, profile["default_drive_power"] + 15))
+        if self._contains_any(text, ["backward", "reverse", "back up"]):
+            power = -power
+        return int(power)
+
     def _speech_for_fallback(self, action: Dict[str, Any]) -> str:
         action_type = action.get("type")
         if action_type == "drive_tank":
-            return "Moving cautiously."
+            return "Moving."
         if action_type == "rotate":
-            return "Rotating cautiously."
+            return "Rotating."
         if action_type == "display_text":
             return "Updating the display."
         if action_type == "camera_capture":
@@ -1004,7 +1007,82 @@ class OllamaClient:
         return "Executing a safe action."
 
     def _action_reference(self) -> Dict[str, Any]:
-        return deepcopy(ACTION_REFERENCE)
+        reference = deepcopy(ACTION_REFERENCE)
+        profile = self.movement_profile
+        reference["drive_tank"]["guidance"] = (
+            "For ordinary chassis movement, use movement_profile.default_drive_power "
+            "and movement_profile.default_drive_ms. Do not use very small power values "
+            "unless the operator explicitly asks for a tiny adjustment."
+        )
+        reference["drive_tank"]["example"] = {
+            "type": "drive_tank",
+            "left_power": profile["default_drive_power"],
+            "right_power": profile["default_drive_power"],
+            "duration_ms": profile["default_drive_ms"],
+        }
+        reference["rotate"]["guidance"] = (
+            "For ordinary turns, use movement_profile.default_rotate_power and "
+            "movement_profile.default_rotate_ms."
+        )
+        reference["rotate"]["example"] = {
+            "type": "rotate",
+            "power": profile["default_rotate_power"],
+            "direction": "left",
+            "duration_ms": profile["default_rotate_ms"],
+        }
+        return reference
+
+    def _normalize_movement_profile(
+        self,
+        movement_profile: Optional[Dict[str, Any]],
+    ) -> Dict[str, int]:
+        profile = movement_profile if isinstance(movement_profile, dict) else {}
+        default_drive_power = self._bounded_int(
+            profile.get("default_drive_power", 45),
+            "default_drive_power",
+            1,
+            100,
+        )
+        minimum_effective_drive_power = self._bounded_int(
+            profile.get("minimum_effective_drive_power", 35),
+            "minimum_effective_drive_power",
+            1,
+            100,
+        )
+        if minimum_effective_drive_power > default_drive_power:
+            minimum_effective_drive_power = default_drive_power
+
+        return {
+            "default_drive_power": default_drive_power,
+            "minimum_effective_drive_power": minimum_effective_drive_power,
+            "default_drive_ms": self._bounded_int(
+                profile.get("default_drive_ms", 700),
+                "default_drive_ms",
+                1,
+                10000,
+            ),
+            "default_rotate_power": self._bounded_int(
+                profile.get("default_rotate_power", 45),
+                "default_rotate_power",
+                1,
+                100,
+            ),
+            "default_rotate_ms": self._bounded_int(
+                profile.get("default_rotate_ms", 500),
+                "default_rotate_ms",
+                1,
+                10000,
+            ),
+        }
+
+    def _bounded_int(self, value: Any, name: str, lower: int, upper: int) -> int:
+        try:
+            if isinstance(value, bool):
+                raise TypeError
+            number = int(value)
+        except (TypeError, ValueError):
+            raise OllamaClientError(f"{name} must be an integer", 400)
+        return max(lower, min(upper, number))
 
     def _build_model_snapshot(self, robot_snapshot: Dict[str, Any]) -> Dict[str, Any]:
         """Return a compact, model-facing snapshot without internal AI metadata."""

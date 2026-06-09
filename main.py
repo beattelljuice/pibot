@@ -196,6 +196,7 @@ def main() -> None:
                 "logs/ollama_requests.jsonl",
             ),
             request_log_include_images=ollama_log_config.get("include_images", False),
+            movement_profile=ollama_config.get("movement_profile"),
             robot_state=robot_state,
         )
         if ollama.enabled:
