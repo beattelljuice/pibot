@@ -75,7 +75,7 @@
   },
   "ai_loop": {
     "enabled_on_start": false,
-    "decision_interval_ms": 1000,
+    "decision_interval_ms": 30000,
     "idle_interval_ms": 250,
     "error_backoff_ms": 3000,
     "include_camera": true,
@@ -83,6 +83,6 @@
     "require_ai_mode": true,
     "set_ai_mode_on_start": true,
     "stop_on_error": true,
-    "max_consecutive_errors": 3
+    "max_consecutive_errors": 5
   }
 }
