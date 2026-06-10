@@ -1367,7 +1367,8 @@
             try {
                 const result = await apiRequest('/camera/capture', { method: 'POST' });
                 const frame = result.frame || {};
-                document.getElementById('camera-meta').textContent = `${frame.width || '--'}x${frame.height || '--'}, ${frame.bytes || '--'} bytes`;
+                const source = frame.source_width && frame.source_height ? ` from ${frame.source_width}x${frame.source_height}` : '';
+                document.getElementById('camera-meta').textContent = `${frame.width || '--'}x${frame.height || '--'}${source}, ${frame.bytes || '--'} bytes`;
                 await refreshRobotState();
             } catch (error) {
                 showError(`Failed to capture camera metadata: ${error.message}`);

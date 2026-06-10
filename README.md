@@ -309,15 +309,35 @@ The default camera config uses device index `0` and automatic resolution:
   "fps": "auto",
   "auto_resolution": true,
   "prefer_max_resolution": true,
+  "output_width": "auto",
+  "output_height": "auto",
+  "output_resize_mode": "fit",
   "jpeg_quality": 85,
   "warmup_frames": 2,
   "stale_after_ms": 2000
 }
 ```
 
-When numeric `width` and `height` are set, the controller requests that configured mode first. If either dimension is `"auto"` and both `auto_resolution` and `prefer_max_resolution` are enabled, the controller uses `v4l2-ctl` to find the largest discrete camera mode and asks OpenCV to use it. If mode detection is unavailable, it uses the camera's default output. The actual captured width and height are reported in `/camera/status`, `/robot/state`, and `/camera/capture`.
+`width` and `height` control the camera mode requested from the device. Some webcams crop the sensor in lower-resolution modes, which can look zoomed in.
 
-If the camera is not the first video device, change `device_index` in `config.json`. To force a specific mode for faster AI vision, set numeric `width` and `height`; set `auto_resolution` and `prefer_max_resolution` to `false` to avoid requesting the camera's maximum mode.
+`output_width` and `output_height` control the JPEG size returned by the API after capture. To keep the full field of view while sending a smaller image to the AI, leave `width` and `height` as `"auto"`, keep max auto-resolution enabled, and set output dimensions:
+
+```json
+"camera": {
+  "width": "auto",
+  "height": "auto",
+  "auto_resolution": true,
+  "prefer_max_resolution": true,
+  "output_width": 480,
+  "output_height": 270,
+  "output_resize_mode": "fit",
+  "jpeg_quality": 75
+}
+```
+
+The `fit` resize mode preserves the whole frame. If the source aspect ratio does not match the output aspect ratio, it adds black padding instead of cropping.
+
+If the camera is not the first video device, change `device_index` in `config.json`. The actual output width/height and source width/height are reported in `/camera/status`, `/robot/state`, and `/camera/capture`.
 
 The camera is exposed through:
 

@@ -260,15 +260,26 @@ class SafetySupervisor:
             }
 
         if action_type == "display_text":
+            text = self._display_text_value(action)
+            if not text.strip():
+                return {"decision": "rejected", "reason": "display_text text is required"}
+            x = self._clamp_display_coordinate(
+                self._optional_int(action.get("x", 0), "x"),
+                max(0, self.display_controller.width - 1),
+            )
+            y = self._clamp_display_coordinate(
+                self._optional_int(action.get("y", 0), "y"),
+                max(0, self.display_controller.height - 1),
+            )
             return {
                 "decision": "ok",
                 "clamped": False,
                 "action": {
                     "type": "display_text",
-                    "text": str(action.get("text", "")),
-                    "x": self._optional_int(action.get("x", 0), "x"),
-                    "y": self._optional_int(action.get("y", 0), "y"),
-                    "clear": bool(action.get("clear", True)),
+                    "text": text,
+                    "x": x,
+                    "y": y,
+                    "clear": self._optional_bool(action.get("clear", True), "clear"),
                 },
             }
 
@@ -379,6 +390,9 @@ class SafetySupervisor:
                     "captured_at": meta["captured_at"],
                     "width": meta["width"],
                     "height": meta["height"],
+                    "source_width": meta.get("source_width"),
+                    "source_height": meta.get("source_height"),
+                    "resized": meta.get("resized", False),
                     "mime": meta["mime"],
                     "bytes": meta["bytes"],
                     "snapshot_url": "/camera/snapshot.jpg",
@@ -461,6 +475,46 @@ class SafetySupervisor:
         return int(max(1, min(self.max_stepper_steps, value)))
 
     def _optional_int(self, value: Any, field_name: str) -> int:
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
+        if isinstance(value, bool):
+            raise SafetySupervisorError(f"{field_name} must be a number")
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                raise SafetySupervisorError(f"{field_name} must be a number")
+            try:
+                return int(float(value))
+            except ValueError as e:
+                raise SafetySupervisorError(f"{field_name} must be a number") from e
+        if not isinstance(value, (int, float)):
             raise SafetySupervisorError(f"{field_name} must be a number")
         return int(value)
+
+    def _optional_bool(self, value: Any, field_name: str) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"true", "1", "yes", "y", "on"}:
+                return True
+            if normalized in {"false", "0", "no", "n", "off"}:
+                return False
+            raise SafetySupervisorError(f"{field_name} must be a boolean")
+        if isinstance(value, (int, float)):
+            return bool(value)
+        raise SafetySupervisorError(f"{field_name} must be a boolean")
+
+    def _display_text_value(self, action: Dict[str, Any]) -> str:
+        for key in ("text", "message", "content", "value", "line"):
+            if key in action and action[key] is not None:
+                return self._stringify_display_text(action[key])
+        if "lines" in action and action["lines"] is not None:
+            return self._stringify_display_text(action["lines"])
+        return ""
+
+    def _stringify_display_text(self, value: Any) -> str:
+        if isinstance(value, list):
+            return "\n".join(str(item) for item in value)
+        return str(value)
+
+    def _clamp_display_coordinate(self, value: int, upper: int) -> int:
+        return max(0, min(int(value), int(upper)))

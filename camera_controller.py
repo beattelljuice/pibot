@@ -27,6 +27,9 @@ class CameraController:
         fps: int | str | None = "auto",
         auto_resolution: bool = True,
         prefer_max_resolution: bool = True,
+        output_width: int | str | None = "auto",
+        output_height: int | str | None = "auto",
+        output_resize_mode: str = "fit",
         jpeg_quality: int = 85,
         warmup_frames: int = 2,
         stale_after_ms: int = 2000,
@@ -36,10 +39,15 @@ class CameraController:
         self.configured_width = self._parse_optional_dimension(width)
         self.configured_height = self._parse_optional_dimension(height)
         self.configured_fps = self._parse_optional_dimension(fps)
+        self.output_width = self._parse_optional_dimension(output_width)
+        self.output_height = self._parse_optional_dimension(output_height)
+        self.output_resize_mode = self._parse_resize_mode(output_resize_mode)
         self.auto_resolution = bool(auto_resolution)
         self.prefer_max_resolution = bool(prefer_max_resolution)
-        self.width = self.configured_width
-        self.height = self.configured_height
+        self.source_width = self.configured_width
+        self.source_height = self.configured_height
+        self.width = self.output_width or self.configured_width
+        self.height = self.output_height or self.configured_height
         self.fps = self.configured_fps
         self.jpeg_quality = max(1, min(100, int(jpeg_quality)))
         self.warmup_frames = max(0, int(warmup_frames))
@@ -108,7 +116,12 @@ class CameraController:
                     "fps": self.configured_fps,
                     "auto_resolution": self.auto_resolution,
                     "prefer_max_resolution": self.prefer_max_resolution,
+                    "output_width": self.output_width,
+                    "output_height": self.output_height,
+                    "output_resize_mode": self.output_resize_mode,
                 },
+                "source_width": self.source_width,
+                "source_height": self.source_height,
                 "selected_mode": self._selected_mode,
                 "jpeg_quality": self.jpeg_quality,
                 "stale_after_ms": self.stale_after_ms,
@@ -129,16 +142,21 @@ class CameraController:
                 if not ok or frame is None:
                     raise CameraControllerError("camera returned no frame")
 
+            source_height, source_width = frame.shape[:2]
+            output_frame, resize_meta = self._resize_frame_for_output(frame, cv2)
+
             ok, encoded = cv2.imencode(
                 ".jpg",
-                frame,
+                output_frame,
                 [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality],
             )
             if not ok:
                 raise CameraControllerError("failed to encode camera frame")
 
             captured_at = datetime.now().isoformat(timespec="milliseconds")
-            height, width = frame.shape[:2]
+            height, width = output_frame.shape[:2]
+            self.source_width = int(source_width)
+            self.source_height = int(source_height)
             self.width = int(width)
             self.height = int(height)
             jpeg_bytes = encoded.tobytes()
@@ -146,6 +164,10 @@ class CameraController:
                 "captured_at": captured_at,
                 "width": int(width),
                 "height": int(height),
+                "source_width": int(source_width),
+                "source_height": int(source_height),
+                "resized": resize_meta["resized"],
+                "resize": resize_meta,
                 "mime": "image/jpeg",
                 "bytes": len(jpeg_bytes),
             }
@@ -154,6 +176,7 @@ class CameraController:
             self._last_frame_meta = meta
             camera_log(
                 f"Captured frame {meta['width']}x{meta['height']} "
+                f"from {meta['source_width']}x{meta['source_height']} "
                 f"{meta['bytes']} bytes"
             )
             return jpeg_bytes, dict(meta)
@@ -222,6 +245,84 @@ class CameraController:
 
         self._selected_mode = selected_mode
 
+    def _resize_frame_for_output(self, frame, cv2):
+        source_height, source_width = frame.shape[:2]
+        target_width = self.output_width
+        target_height = self.output_height
+
+        if not target_width and not target_height:
+            return frame, {
+                "resized": False,
+                "mode": "none",
+                "target_width": None,
+                "target_height": None,
+                "content_width": int(source_width),
+                "content_height": int(source_height),
+            }
+
+        if target_width and not target_height:
+            target_height = max(1, int(round(source_height * (target_width / source_width))))
+        elif target_height and not target_width:
+            target_width = max(1, int(round(source_width * (target_height / source_height))))
+
+        target_width = int(target_width)
+        target_height = int(target_height)
+
+        if self.output_resize_mode == "stretch":
+            resized = cv2.resize(
+                frame,
+                (target_width, target_height),
+                interpolation=cv2.INTER_AREA
+                if target_width < source_width or target_height < source_height
+                else cv2.INTER_LINEAR,
+            )
+            return resized, {
+                "resized": target_width != source_width or target_height != source_height,
+                "mode": "stretch",
+                "target_width": target_width,
+                "target_height": target_height,
+                "content_width": target_width,
+                "content_height": target_height,
+            }
+
+        scale = min(target_width / source_width, target_height / source_height)
+        content_width = max(1, int(round(source_width * scale)))
+        content_height = max(1, int(round(source_height * scale)))
+        resized = cv2.resize(
+            frame,
+            (content_width, content_height),
+            interpolation=cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR,
+        )
+
+        pad_left = max(0, (target_width - content_width) // 2)
+        pad_right = max(0, target_width - content_width - pad_left)
+        pad_top = max(0, (target_height - content_height) // 2)
+        pad_bottom = max(0, target_height - content_height - pad_top)
+
+        if pad_left or pad_right or pad_top or pad_bottom:
+            resized = cv2.copyMakeBorder(
+                resized,
+                pad_top,
+                pad_bottom,
+                pad_left,
+                pad_right,
+                cv2.BORDER_CONSTANT,
+                value=[0, 0, 0],
+            )
+
+        return resized, {
+            "resized": target_width != source_width or target_height != source_height,
+            "mode": "fit",
+            "target_width": target_width,
+            "target_height": target_height,
+            "content_width": content_width,
+            "content_height": content_height,
+            "pad_left": pad_left,
+            "pad_right": pad_right,
+            "pad_top": pad_top,
+            "pad_bottom": pad_bottom,
+        }
+
     def _detect_largest_v4l2_mode(self) -> Optional[Dict[str, Any]]:
         device_path = f"/dev/video{self.device_index}"
         try:
@@ -271,9 +372,13 @@ class CameraController:
         actual_fps = self._capture.get(cv2.CAP_PROP_FPS) or 0
 
         if actual_width > 0:
-            self.width = actual_width
+            self.source_width = actual_width
+            if not self.output_width:
+                self.width = actual_width
         if actual_height > 0:
-            self.height = actual_height
+            self.source_height = actual_height
+            if not self.output_height:
+                self.height = actual_height
         if actual_fps > 0:
             self.fps = float(actual_fps)
 
@@ -288,6 +393,12 @@ class CameraController:
         if parsed < 1:
             return None
         return parsed
+
+    def _parse_resize_mode(self, value) -> str:
+        mode = str(value or "fit").strip().lower()
+        if mode not in {"fit", "stretch"}:
+            return "fit"
+        return mode
 
     def _cv2(self):
         try:

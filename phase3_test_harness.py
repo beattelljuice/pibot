@@ -115,6 +115,8 @@ class FakeManager:
 
 class FakeDisplay:
     available = True
+    width = 128
+    height = 64
 
     def __init__(self):
         self.actions = []
@@ -296,6 +298,51 @@ def test_oled_text_allowed_during_estop():
     assert display.actions[-1][0] == "text"
 
 
+def test_oled_text_accepts_ai_aliases_and_string_coordinates():
+    state, manager, executor, display, camera, safety = make_context()
+    state.set_mode("ai")
+    result = first_result(
+        safety.propose(
+            [
+                {
+                    "type": "display_text",
+                    "message": "Alias text",
+                    "x": "4",
+                    "y": "8",
+                    "clear": "false",
+                }
+            ],
+            source="ai",
+        )
+    )
+    assert result["decision"] == "approved"
+    assert result["executed"]
+    assert display.actions[-1] == ("text", "Alias text", 4, 8, False)
+
+
+def test_oled_text_clamps_offscreen_coordinates():
+    state, manager, executor, display, camera, safety = make_context()
+    state.set_mode("ai")
+    result = first_result(
+        safety.propose(
+            [{"type": "display_text", "text": "Visible", "x": 999, "y": 999}],
+            source="ai",
+        )
+    )
+    assert result["decision"] == "approved"
+    assert result["executed"]
+    assert display.actions[-1][2] == 127
+    assert display.actions[-1][3] == 63
+
+
+def test_oled_blank_text_rejected():
+    state, manager, executor, display, camera, safety = make_context()
+    state.set_mode("ai")
+    result = first_result(safety.propose([{"type": "display_text", "message": ""}], source="ai"))
+    assert result["decision"] == "rejected"
+    assert not result["executed"]
+
+
 def test_camera_capture_allowed_during_paused():
     state, manager, executor, display, camera, safety = make_context()
     state.set_mode("paused")
@@ -331,6 +378,9 @@ TESTS = [
     test_duration_clamps_to_1500_ms,
     test_stepper_move_clamps_to_500_steps,
     test_oled_text_allowed_during_estop,
+    test_oled_text_accepts_ai_aliases_and_string_coordinates,
+    test_oled_text_clamps_offscreen_coordinates,
+    test_oled_blank_text_rejected,
     test_camera_capture_allowed_during_paused,
     test_unknown_action_type_rejected,
     test_malformed_action_rejected,

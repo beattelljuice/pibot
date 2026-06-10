@@ -62,9 +62,16 @@ ACTION_REFERENCE = {
         },
     },
     "display_text": {
-        "purpose": "Write text on the OLED display.",
+        "purpose": "Write visible text on the OLED display.",
         "movement": "none",
-        "schema": {"type": "display_text", "text": "string", "x": 0, "y": 0, "clear": True},
+        "schema": {
+            "type": "display_text",
+            "text": "non-empty string to print",
+            "x": "optional integer from 0 to 127",
+            "y": "optional integer from 0 to 63",
+            "clear": "optional boolean",
+        },
+        "example": {"type": "display_text", "text": "AI online", "x": 0, "y": 0, "clear": True},
     },
     "display_frame": {
         "purpose": "Write a full 128x64 OLED pixel frame.",
