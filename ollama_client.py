@@ -103,6 +103,8 @@ All movement must be bounded and intentional.
 Use movement_profile for practical chassis powers and durations. Avoid tiny pulses that will not overcome motor deadzone.
 Do not require extra sensors to move when the camera, robot state, and operator goal are sufficient.
 If the scene or goal is unsafe, blocked, or ambiguous, stop or wait by returning no movement actions.
+Use stop_all only when an active action must be stopped or the operator explicitly asks to stop all motion.
+If the operator asks for analysis, reporting, memory lookup, or a recommendation and says not to move, answer in speech with an empty actions list.
 Use persistent_memories as durable context from past runs. If you learn a durable useful fact or calibration, you may include one remember action.
 Do not remember temporary guesses, raw camera descriptions, or repeated facts already present in persistent_memories.
 Never invent sensors, motors, actions, or hardware limits.
@@ -118,6 +120,8 @@ Write a concise plain-English intent for what should happen next.
 Do not return JSON.
 Do not invent sensors, motors, actions, or hardware limits.
 If the goal is empty, ambiguous, unsafe, or impossible, say that no physical action should be taken.
+If the operator asks for analysis, reporting, memory lookup, or a recommendation and says not to move, describe the answer and say no physical action should be taken.
+Use stop_all only when an active action must be stopped or the operator explicitly asks to stop all motion.
 Mention only actions that can be represented by available_actions.
 Use drive_tank or rotate for chassis movement. Never use stepper_move for navigation; stepper_move is arm-only.
 If the goal is to move toward a doorway or destination, describe chassis movement, not arm movement.
@@ -130,6 +134,8 @@ You must only return valid JSON.
 You may only use the actions listed in available_actions.
 Do not invent sensors, motors, actions, or hardware limits.
 If the intent is ambiguous, unsafe, impossible, or says no physical action, return an empty actions list.
+If the goal or intent asks for analysis, reporting, memory lookup, or a recommendation and says not to move, put the answer in speech and return an empty actions list.
+Use stop_all only when an active action must be stopped or the operator explicitly asks to stop all motion.
 Use drive_tank or rotate for chassis movement. Never use stepper_move for navigation; stepper_move is arm-only.
 If an intent says to move the robot toward a doorway using stepper movement, correct that hardware mistake by using chassis drive_tank or rotate actions instead of stepper_move.
 All movement must be bounded but effective. Use movement_profile values unless the intent clearly requires a smaller adjustment.
@@ -628,6 +634,12 @@ class OllamaClient:
             content = self._extract_content(response)
             parsed = self._parse_json_content(content)
             proposal = self._validate_proposal(parsed)
+            proposal = self._suppress_unneeded_stop_all(
+                proposal,
+                intent_text,
+                operator_goal,
+                model_snapshot,
+            )
             fallback_action = self._fallback_action_from_intent(
                 proposal,
                 intent_text,
@@ -980,6 +992,146 @@ class OllamaClient:
             }
 
         return None
+
+    def _suppress_unneeded_stop_all(
+        self,
+        proposal: Dict[str, Any],
+        intent_text: str,
+        operator_goal: str,
+        model_snapshot: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Remove stop_all from informational no-motion goals when nothing is active."""
+        actions = proposal.get("actions", [])
+        if not actions:
+            return proposal
+
+        stop_actions = [
+            action
+            for action in actions
+            if isinstance(action, dict) and action.get("type") in {"stop", "stop_all"}
+        ]
+        if not stop_actions:
+            return proposal
+
+        text = f"{operator_goal} {intent_text}".lower()
+        if self._explicit_stop_requested(text):
+            return proposal
+        if not self._informational_no_motion_request(text):
+            return proposal
+        if self._has_active_motion(model_snapshot):
+            return proposal
+
+        remaining_actions = [
+            action
+            for action in actions
+            if not (isinstance(action, dict) and action.get("type") in {"stop", "stop_all"})
+        ]
+        cleaned = deepcopy(proposal)
+        cleaned["actions"] = remaining_actions
+        cleaned["speech"] = self._speech_for_informational_no_motion(
+            cleaned.get("speech", ""),
+            operator_goal,
+            model_snapshot,
+        )
+        return cleaned
+
+    def _explicit_stop_requested(self, text: str) -> bool:
+        return self._contains_any(
+            text,
+            [
+                "stop all",
+                "stop_all",
+                "emergency stop",
+                "e-stop",
+                "estop",
+                "halt",
+                "kill motion",
+            ],
+        )
+
+    def _informational_no_motion_request(self, text: str) -> bool:
+        no_motion = self._contains_any(
+            text,
+            [
+                "do not move",
+                "don't move",
+                "without moving",
+                "no movement",
+                "do not drive",
+                "don't drive",
+                "do not execute",
+                "no physical action",
+            ],
+        )
+        informational = self._contains_any(
+            text,
+            [
+                "decide",
+                "recommend",
+                "report",
+                "describe",
+                "use your memory",
+                "memory",
+                "what drive power",
+                "what power",
+                "analyze",
+                "check",
+                "tell me",
+            ],
+        )
+        return no_motion and informational
+
+    def _has_active_motion(self, model_snapshot: Dict[str, Any]) -> bool:
+        robot = model_snapshot.get("robot", {}) if isinstance(model_snapshot, dict) else {}
+        executor = robot.get("executor", {}) if isinstance(robot, dict) else {}
+        active_action = executor.get("active_action")
+        if not isinstance(active_action, dict):
+            return False
+        return active_action.get("type") in {"drive_tank", "rotate", "stepper_move"}
+
+    def _speech_for_informational_no_motion(
+        self,
+        current_speech: str,
+        operator_goal: str,
+        model_snapshot: Dict[str, Any],
+    ) -> str:
+        if current_speech and not self._contains_any(
+            current_speech.lower(),
+            ["stop", "stopping", "stopped"],
+        ):
+            return current_speech
+
+        memory_text = self._matching_memory_text(operator_goal, model_snapshot)
+        if memory_text:
+            return f"Memory says: {memory_text}. No movement executed."
+        return "No movement executed."
+
+    def _matching_memory_text(
+        self,
+        operator_goal: str,
+        model_snapshot: Dict[str, Any],
+    ) -> Optional[str]:
+        memory = model_snapshot.get("memory", {}) if isinstance(model_snapshot, dict) else {}
+        memories = memory.get("persistent_memories", [])
+        if not isinstance(memories, list):
+            return None
+
+        terms = set(re.findall(r"[a-zA-Z0-9_]+", str(operator_goal).lower()))
+        best_text = None
+        best_score = 0
+        for item in memories:
+            if not isinstance(item, dict):
+                continue
+            text = str(item.get("text", "")).strip()
+            if not text:
+                continue
+            tags = {str(tag).lower() for tag in item.get("tags", []) if isinstance(tag, str)}
+            haystack = set(re.findall(r"[a-zA-Z0-9_]+", text.lower())) | tags
+            score = len(terms & haystack)
+            if score > best_score:
+                best_score = score
+                best_text = text
+        return best_text[:220] if best_text else None
 
     def _extract_display_text(self, intent_text: str, operator_goal: str) -> Optional[str]:
         text = f"{intent_text} {operator_goal}"

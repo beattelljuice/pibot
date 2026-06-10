@@ -312,6 +312,49 @@ def test_empty_translation_respects_no_action_intent():
     assert result["proposal"]["actions"] == []
 
 
+def test_stop_all_suppressed_for_memory_query_without_motion():
+    client = make_client(
+        [
+            "Memory indicates power below 65 is too weak. No physical action should be taken.",
+            '{"speech":"Stopping all motion.","actions":[{"type":"stop_all"}],"next_check_ms":500}',
+        ]
+    )
+    snapshot = make_snapshot()
+    snapshot["robot"]["executor"] = {"active_action": None}
+    snapshot["memory"]["persistent_memories"] = [
+        {
+            "id": 1,
+            "type": "lesson",
+            "source": "operator",
+            "text": "Driving below power 65 is usually too weak for the chassis",
+            "tags": ["drive", "power", "calibration"],
+            "confidence": 1.0,
+        }
+    ]
+    result = client.decide(
+        snapshot,
+        operator_goal="Use your memory to decide what drive power is practical for a short forward movement. Do not move.",
+    )
+    assert result["proposal"]["actions"] == []
+    assert "below power 65" in result["proposal"]["speech"]
+    assert "No movement executed" in result["proposal"]["speech"]
+
+
+def test_stop_all_kept_when_no_motion_goal_has_active_motion():
+    client = make_client(
+        [
+            "An active drive action should be stopped while answering.",
+            '{"speech":"Stopping active motion.","actions":[{"type":"stop_all"}],"next_check_ms":500}',
+        ]
+    )
+    snapshot = make_snapshot()
+    snapshot["robot"]["executor"] = {
+        "active_action": {"type": "drive_tank", "left_power": 45, "right_power": 45}
+    }
+    result = client.decide(snapshot, operator_goal="Check status and do not move.")
+    assert result["proposal"]["actions"][0]["type"] == "stop_all"
+
+
 def test_request_log_records_success_and_omits_images():
     log_path = Path("phase4_test_ollama_requests.jsonl")
     if log_path.exists():
@@ -391,6 +434,8 @@ TESTS = [
     test_empty_translation_gets_drive_fallback_from_intent,
     test_empty_translation_gets_rotate_fallback_from_intent,
     test_empty_translation_respects_no_action_intent,
+    test_stop_all_suppressed_for_memory_query_without_motion,
+    test_stop_all_kept_when_no_motion_goal_has_active_motion,
     test_request_log_records_success_and_omits_images,
     test_request_log_records_raw_response_on_parse_error,
 ]
