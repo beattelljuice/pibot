@@ -36,11 +36,7 @@ class CameraController:
         self.configured_width = self._parse_optional_dimension(width)
         self.configured_height = self._parse_optional_dimension(height)
         self.configured_fps = self._parse_optional_dimension(fps)
-        self.auto_resolution = (
-            bool(auto_resolution)
-            or self.configured_width is None
-            or self.configured_height is None
-        )
+        self.auto_resolution = bool(auto_resolution)
         self.prefer_max_resolution = bool(prefer_max_resolution)
         self.width = self.configured_width
         self.height = self.configured_height
@@ -193,7 +189,19 @@ class CameraController:
     def _configure_capture(self, capture, cv2) -> None:
         selected_mode = None
 
-        if self.auto_resolution and self.prefer_max_resolution:
+        if self.configured_width and self.configured_height:
+            capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.configured_width)
+            capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.configured_height)
+            selected_mode = {
+                "width": self.configured_width,
+                "height": self.configured_height,
+                "source": "config",
+            }
+            camera_log(
+                "Requested configured camera mode "
+                f"{self.configured_width}x{self.configured_height}"
+            )
+        elif self.auto_resolution and self.prefer_max_resolution:
             selected_mode = self._detect_largest_v4l2_mode()
             if selected_mode:
                 capture.set(cv2.CAP_PROP_FRAME_WIDTH, selected_mode["width"])
@@ -206,14 +214,8 @@ class CameraController:
                 camera_log(
                     "Could not detect camera modes; using camera default resolution"
                 )
-        elif self.configured_width and self.configured_height:
-            capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.configured_width)
-            capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.configured_height)
-            selected_mode = {
-                "width": self.configured_width,
-                "height": self.configured_height,
-                "source": "config",
-            }
+        elif self.auto_resolution:
+            camera_log("Using camera default resolution")
 
         if self.configured_fps:
             capture.set(cv2.CAP_PROP_FPS, self.configured_fps)

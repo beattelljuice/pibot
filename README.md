@@ -315,9 +315,9 @@ The default camera config uses device index `0` and automatic resolution:
 }
 ```
 
-With `auto_resolution` and `prefer_max_resolution` enabled, the controller uses `v4l2-ctl` to find the largest discrete camera mode and asks OpenCV to use it. If mode detection is unavailable, it uses the camera's default output. The actual captured width and height are reported in `/camera/status`, `/robot/state`, and `/camera/capture`.
+When numeric `width` and `height` are set, the controller requests that configured mode first. If either dimension is `"auto"` and both `auto_resolution` and `prefer_max_resolution` are enabled, the controller uses `v4l2-ctl` to find the largest discrete camera mode and asks OpenCV to use it. If mode detection is unavailable, it uses the camera's default output. The actual captured width and height are reported in `/camera/status`, `/robot/state`, and `/camera/capture`.
 
-If the camera is not the first video device, change `device_index` in `config.json`. To force a specific mode, set numeric `width` and `height`, then set `auto_resolution` to `false`.
+If the camera is not the first video device, change `device_index` in `config.json`. To force a specific mode for faster AI vision, set numeric `width` and `height`; set `auto_resolution` and `prefer_max_resolution` to `false` to avoid requesting the camera's maximum mode.
 
 The camera is exposed through:
 

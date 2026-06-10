@@ -37,8 +37,8 @@
     "width": "480",
     "height": "270",
     "fps": "auto",
-    "auto_resolution": true,
-    "prefer_max_resolution": true,
+    "auto_resolution": false,
+    "prefer_max_resolution": false,
     "jpeg_quality": 85,
     "warmup_frames": 2,
     "stale_after_ms": 2000
