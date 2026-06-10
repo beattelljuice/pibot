@@ -128,3 +128,16 @@ class Config:
                 "max_consecutive_errors": 3,
             },
         )
+
+    def get_memory_config(self) -> Dict[str, Any]:
+        """Get persistent memory configuration."""
+        return self.data.get(
+            "memory",
+            {
+                "enabled": True,
+                "path": "data/memory.json",
+                "max_memories": 500,
+                "prompt_limit": 8,
+                "max_text_chars": 500,
+            },
+        )

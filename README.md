@@ -48,6 +48,7 @@ The browser UI includes both the manual motor controller and a Robot Runtime Tes
 - Low-level stepper action tests
 - SH1106 OLED text and pixel-frame tests
 - USB camera snapshot and capture tests
+- Persistent memory add/search/archive tests
 
 ## Phase 3 Safety Tests
 
@@ -74,7 +75,7 @@ curl -X POST http://localhost:5000/actions/propose \
   -d '{"source":"ai","actions":[{"type":"drive_tank","left_power":45,"right_power":45,"duration_ms":700}]}'
 ```
 
-AI movement is allowed only while robot mode is `ai`. Safe non-movement actions such as OLED text and camera capture are allowed in paused or emergency-stop states.
+AI movement is allowed only while robot mode is `ai`. Safe non-movement actions such as OLED text, camera capture, and persistent memory writes are allowed in paused or emergency-stop states.
 
 ## Phase 4 Ollama One-Shot Brain
 
@@ -223,6 +224,63 @@ curl -X POST http://localhost:5000/ai/stop \
 ```
 
 The browser tester includes an `Autonomous AI Loop` panel. Start with wheels lifted and use short goals. The loop stops issuing model requests when the robot leaves `ai` mode or emergency stop is active.
+
+## Phase 6 Persistent Memory
+
+Phase 6 adds file-backed memory that survives app restarts. The AI prompt receives a compact list of memories relevant to the current goal, and the AI may save a durable lesson with the supervised non-movement `remember` action.
+
+Run the fake-hardware memory test harness:
+
+```bash
+python3 phase6_test_harness.py
+```
+
+Configure memory in `config.json`:
+
+```json
+"memory": {
+  "enabled": true,
+  "path": "data/memory.json",
+  "max_memories": 500,
+  "prompt_limit": 8,
+  "max_text_chars": 500
+}
+```
+
+Memory endpoints:
+
+```text
+GET    /memory/status
+GET    /memory
+GET    /memory/relevant
+POST   /memory
+POST   /memory/<id>/archive
+DELETE /memory/<id>
+```
+
+Add an operator memory:
+
+```bash
+curl -X POST http://localhost:5000/memory \
+  -H "Content-Type: application/json" \
+  -d '{"memory_type":"calibration","text":"Drive power below 35 is usually too weak to move the chassis.","tags":["drive","power"],"confidence":0.9}'
+```
+
+AI memory action example:
+
+```json
+{
+  "type": "remember",
+  "memory_type": "lesson",
+  "text": "Drive power below 35 is usually too weak to move the chassis.",
+  "tags": ["drive", "power"],
+  "confidence": 0.9
+}
+```
+
+Use `remember` only for stable facts, operator preferences, calibration lessons, warnings, or scene facts worth keeping across restarts. Temporary camera observations should stay in short-term context.
+
+The browser interface includes a `Memory` tab for adding, searching, and archiving memories. The `In Current Prompt` section shows which persistent memories are being sent to Ollama for the current goal.
 
 ## USB Camera Setup
 
@@ -457,9 +515,12 @@ curl -X POST http://localhost:5000/robot/estop \
 - `config.py` - Configuration loader
 - `config.json` - Motor configuration
 - `ollama_client.py` - Ollama one-shot AI decision client
+- `memory_store.py` - Persistent memory store
 - `index.html` - Web UI controller
 - `phase3_test_harness.py` - Fake-hardware safety supervisor tests
 - `phase4_test_harness.py` - Fake-Ollama client tests
+- `phase5_test_harness.py` - Fake autonomous loop tests
+- `phase6_test_harness.py` - Persistent memory tests
 - `requirements.txt` - Python dependencies
 
 ## Troubleshooting

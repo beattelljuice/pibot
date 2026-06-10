@@ -9,6 +9,7 @@ from camera_controller import CameraController
 from config import Config
 from display_controller import DisplayController
 from gpio_controller import GPIOController
+from memory_store import MemoryStore
 from motor_manager import MotorManager
 from ollama_client import OllamaClient
 from robot_state import RobotState
@@ -29,6 +30,7 @@ def main() -> None:
     robot_state = None
     display = None
     camera = None
+    memory = None
     safety = None
     ollama = None
     cleanup_started = False
@@ -162,6 +164,21 @@ def main() -> None:
         executor = ActionExecutor(manager, robot_state=robot_state)
         main_log("Action Executor initialized")
 
+        memory_config = config.get_memory_config()
+        main_log("Initializing Memory Store...")
+        memory = MemoryStore(
+            enabled=memory_config.get("enabled", True),
+            path=memory_config.get("path", "data/memory.json"),
+            max_memories=memory_config.get("max_memories", 500),
+            prompt_limit=memory_config.get("prompt_limit", 8),
+            max_text_chars=memory_config.get("max_text_chars", 500),
+        )
+        memory_status = memory.get_status()
+        if memory_status["enabled"]:
+            main_log(f"Memory Store initialized at {memory_status['path']}")
+        else:
+            main_log("Memory Store disabled")
+
         safety_config = config.get_safety_config()
         main_log("Initializing Safety Supervisor...")
         safety = SafetySupervisor(
@@ -169,6 +186,7 @@ def main() -> None:
             action_executor=executor,
             display_controller=display,
             camera_controller=camera,
+            memory_store=memory,
             manual_enforcement=safety_config.get("manual_enforcement", False),
             obstacle_enforcement=safety_config.get("obstacle_enforcement", False),
             max_drive_power=safety_config.get("max_drive_power", 100),
@@ -226,6 +244,7 @@ def main() -> None:
             camera,
             safety,
             ollama,
+            memory_store=memory,
             ai_loop_config=ai_loop_config,
         )
 

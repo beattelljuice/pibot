@@ -164,7 +164,7 @@
 
         .status-grid {
             display: grid;
-            grid-template-columns: repeat(8, minmax(120px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
             gap: 8px;
             margin-bottom: 16px;
         }
@@ -486,6 +486,7 @@
             <div class="chip" id="chip-camera"><span class="label">Camera</span><span class="value">--</span></div>
             <div class="chip" id="chip-ollama"><span class="label">Ollama</span><span class="value">--</span></div>
             <div class="chip" id="chip-safety"><span class="label">Safety</span><span class="value">--</span></div>
+            <div class="chip" id="chip-memory"><span class="label">Memory</span><span class="value">--</span></div>
         </section>
 
         <div class="layout">
@@ -598,6 +599,7 @@
                     <div class="tabs">
                         <button class="tab active" data-tab="overview" onclick="showTab('overview')">Overview</button>
                         <button class="tab" data-tab="logs" onclick="showTab('logs')">AI Logs</button>
+                        <button class="tab" data-tab="memory" onclick="showTab('memory')">Memory</button>
                         <button class="tab" data-tab="hardware" onclick="showTab('hardware')">Hardware</button>
                         <button class="tab" data-tab="state" onclick="showTab('state')">Diagnostics</button>
                     </div>
@@ -627,6 +629,76 @@
                             </div>
                         </div>
                         <div id="log-list" class="summary-list"></div>
+                    </div>
+
+                    <div id="tab-memory" class="tab-page">
+                        <div class="panel-header">
+                            <h2>Persistent Memory</h2>
+                            <div class="actions" style="margin:0;">
+                                <button class="secondary" onclick="refreshMemory()">Refresh Memory</button>
+                            </div>
+                        </div>
+
+                        <section>
+                            <h2>In Current Prompt</h2>
+                            <div id="prompt-memory-list" class="summary-list"></div>
+                        </section>
+
+                        <section style="margin-top:14px;">
+                            <h2>Add Memory</h2>
+                            <label for="memory-text">Text</label>
+                            <textarea id="memory-text" placeholder="Drive power below 35 is usually too weak to move the chassis."></textarea>
+                            <div class="row">
+                                <div>
+                                    <label for="memory-type">Type</label>
+                                    <select id="memory-type">
+                                        <option value="lesson">lesson</option>
+                                        <option value="fact">fact</option>
+                                        <option value="preference">preference</option>
+                                        <option value="warning">warning</option>
+                                        <option value="calibration">calibration</option>
+                                        <option value="scene">scene</option>
+                                        <option value="note">note</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="memory-confidence">Confidence</label>
+                                    <input id="memory-confidence" type="number" value="1" min="0" max="1" step="0.05">
+                                </div>
+                            </div>
+                            <label for="memory-tags">Tags</label>
+                            <input id="memory-tags" type="text" placeholder="drive,power,calibration">
+                            <div class="actions">
+                                <button class="good" onclick="addMemory()">Remember</button>
+                            </div>
+                        </section>
+
+                        <section style="margin-top:14px;">
+                            <h2>Saved Memories</h2>
+                            <div class="row">
+                                <div>
+                                    <label for="memory-search">Search</label>
+                                    <input id="memory-search" type="text" placeholder="drive power">
+                                </div>
+                                <div>
+                                    <label for="memory-filter-type">Type</label>
+                                    <select id="memory-filter-type">
+                                        <option value="">all</option>
+                                        <option value="lesson">lesson</option>
+                                        <option value="fact">fact</option>
+                                        <option value="preference">preference</option>
+                                        <option value="warning">warning</option>
+                                        <option value="calibration">calibration</option>
+                                        <option value="scene">scene</option>
+                                        <option value="note">note</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="actions">
+                                <button class="secondary" onclick="refreshMemory()">Search</button>
+                            </div>
+                            <div id="memory-list" class="summary-list"></div>
+                        </section>
                     </div>
 
                     <div id="tab-hardware" class="tab-page">
@@ -727,6 +799,7 @@
                 page.classList.toggle('active', page.id === `tab-${name}`);
             });
             if (name === 'logs') refreshOllamaLogs();
+            if (name === 'memory') refreshMemory();
         }
 
         async function refreshRobotState() {
@@ -747,6 +820,7 @@
             const aiLoop = robot.ai_loop;
             const ollama = robot.ollama;
             const activeAction = robot.executor && robot.executor.active_action;
+            const memoryStatus = robotState.memory && robotState.memory.memory_store;
 
             setChip('chip-mode', 'Mode', robot.mode || '--', robot.mode === 'estop' ? 'danger' : robot.mode === 'ai' ? 'warn' : 'good');
             setChip('chip-estop', 'E-Stop', robot.emergency_stop ? 'Active' : 'Clear', robot.emergency_stop ? 'danger' : 'good');
@@ -755,6 +829,7 @@
             setChip('chip-camera', 'Camera', robot.camera && robot.camera.available ? `${robot.camera.width || '--'}x${robot.camera.height || '--'}` : 'Unavailable', robot.camera && robot.camera.available ? 'good' : 'warn');
             setChip('chip-ollama', 'Ollama', ollama && ollama.enabled ? (ollama.last_error ? 'Error' : 'Ready') : 'Disabled', ollama && ollama.enabled ? (ollama.last_error ? 'danger' : 'good') : 'warn');
             setChip('chip-safety', 'Safety', robot.safety ? 'Ready' : 'Unavailable', robot.safety ? 'good' : 'warn');
+            setChip('chip-memory', 'Memory', memoryStatus && memoryStatus.enabled ? `${memoryStatus.count || 0} saved` : 'Disabled', memoryStatus && memoryStatus.enabled ? 'good' : 'warn');
 
             const goalInput = document.getElementById('runtime-goal');
             if (goalInput && !goalInput.matches(':focus')) goalInput.value = robot.operator_goal || '';
@@ -767,6 +842,7 @@
             renderLatestDecision(aiLoop && aiLoop.last_decision ? aiLoop.last_decision : latestDecisionPayload);
             renderLatestSafety(aiLoop && aiLoop.last_safety_result ? aiLoop.last_safety_result : latestSafetyPayload);
             renderRecentEvents(robotState.memory && robotState.memory.recent_actions ? robotState.memory.recent_actions : []);
+            renderPromptMemories(robotState.memory && robotState.memory.persistent_memories ? robotState.memory.persistent_memories : []);
         }
 
         function renderDiagnostics(robot) {
@@ -777,6 +853,7 @@
             const ollama = robot.ollama || {};
             const movementProfile = ollama.movement_profile || {};
             const safety = robot.safety || {};
+            const memoryStatus = robotState && robotState.memory ? robotState.memory.memory_store || {} : {};
             const requestLog = ollama.request_log || {};
             const limits = safety.limits || {};
             const rows = [
@@ -788,6 +865,7 @@
                 ['Ollama', ollama.enabled ? `${ollama.model || '--'} at ${ollama.url || '--'}` : 'disabled'],
                 ['Translator', ollama.two_stage ? `${ollama.translator_model || '--'} (${ollama.translator_timeout_ms ?? '--'} ms timeout)` : 'single-stage'],
                 ['AI movement', `drive ${movementProfile.default_drive_power ?? '--'}% for ${movementProfile.default_drive_ms ?? '--'} ms, rotate ${movementProfile.default_rotate_power ?? '--'}% for ${movementProfile.default_rotate_ms ?? '--'} ms`],
+                ['Memory', memoryStatus.enabled ? `${memoryStatus.count ?? 0} active, ${memoryStatus.archived_count ?? 0} archived at ${memoryStatus.path || '--'}` : 'disabled'],
                 ['Request log', requestLog.enabled ? requestLog.path || 'enabled' : 'disabled'],
                 ['Safety limits', `drive ${limits.max_drive_power ?? '--'}%, action ${limits.max_action_ms ?? '--'} ms, stepper ${limits.max_stepper_steps ?? '--'} steps`],
                 ['Last Ollama error', ollama.last_error || '--'],
@@ -815,6 +893,7 @@
             setChip('chip-camera', 'Camera', '--', '');
             setChip('chip-ollama', 'Ollama', '--', '');
             setChip('chip-safety', 'Safety', '--', '');
+            setChip('chip-memory', 'Memory', '--', '');
         }
 
         function setChip(id, label, value, tone = '') {
@@ -966,6 +1045,103 @@
                     </div>
                 `;
             }).join('');
+        }
+
+        function renderPromptMemories(memories) {
+            const container = document.getElementById('prompt-memory-list');
+            if (!container) return;
+            if (!memories.length) {
+                container.innerHTML = emptyItem('No persistent memories selected for the current goal');
+                return;
+            }
+            container.innerHTML = memories.map((memory) => memoryCard(memory, false)).join('');
+        }
+
+        async function refreshMemory() {
+            const queryInput = document.getElementById('memory-search');
+            const typeInput = document.getElementById('memory-filter-type');
+            const query = queryInput ? queryInput.value.trim() : '';
+            const type = typeInput ? typeInput.value : '';
+            const params = new URLSearchParams({ limit: '60' });
+            if (query) params.set('q', query);
+            if (type) params.set('type', type);
+            try {
+                const result = await apiRequest(`/memory?${params.toString()}`);
+                renderMemoryList(result.memories || []);
+                await refreshRobotState();
+                clearError();
+            } catch (error) {
+                showError(`Failed to refresh memory: ${error.message}`);
+            }
+        }
+
+        async function addMemory() {
+            const text = document.getElementById('memory-text').value.trim();
+            if (!text) {
+                showError('Memory text is required');
+                return;
+            }
+            const tags = document.getElementById('memory-tags').value
+                .split(',')
+                .map((tag) => tag.trim())
+                .filter(Boolean);
+            try {
+                await apiRequest('/memory', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        text,
+                        memory_type: document.getElementById('memory-type').value,
+                        tags,
+                        confidence: getNumberInput('memory-confidence', 1),
+                        source: 'operator'
+                    })
+                });
+                document.getElementById('memory-text').value = '';
+                document.getElementById('memory-tags').value = '';
+                await refreshMemory();
+            } catch (error) {
+                showError(`Failed to add memory: ${error.message}`);
+            }
+        }
+
+        async function archiveMemory(memoryId) {
+            try {
+                await apiRequest(`/memory/${encodeURIComponent(memoryId)}/archive`, {
+                    method: 'POST',
+                    body: JSON.stringify({ archived: true })
+                });
+                await refreshMemory();
+            } catch (error) {
+                showError(`Failed to archive memory: ${error.message}`);
+            }
+        }
+
+        function renderMemoryList(memories) {
+            const container = document.getElementById('memory-list');
+            if (!container) return;
+            if (!memories.length) {
+                container.innerHTML = emptyItem('No saved memories match this view');
+                return;
+            }
+            container.innerHTML = memories.map((memory) => memoryCard(memory, true)).join('');
+        }
+
+        function memoryCard(memory, allowArchive) {
+            const tags = Array.isArray(memory.tags) ? memory.tags : [];
+            const confidence = memory.confidence !== undefined ? Math.round(Number(memory.confidence) * 100) : '--';
+            return `
+                <div class="summary-item">
+                    <div class="summary-title">
+                        <span class="pill">${escapeHtml(memory.type || 'note')}</span>
+                        ${escapeHtml(memory.source || '--')}
+                        ${memory.archived ? '<span class="pill warn">archived</span>' : ''}
+                    </div>
+                    <div class="summary-meta">#${escapeHtml(memory.id ?? '--')} | ${escapeHtml(formatTime(memory.created_at))} | confidence ${escapeHtml(confidence)}%</div>
+                    <div class="summary-text">${escapeHtml(memory.text || '')}</div>
+                    ${tags.length ? `<div class="pill-list">${tags.map((tag) => `<span class="pill">${escapeHtml(tag)}</span>`).join('')}</div>` : ''}
+                    ${allowArchive && !memory.archived ? `<div class="actions"><button class="secondary" onclick="archiveMemory(${Number(memory.id)})">Archive</button></div>` : ''}
+                </div>
+            `;
         }
 
         async function setRobotGoal() {
@@ -1283,6 +1459,7 @@
             if (type === 'stepper_move') return `arm ${action.motor || '--'} ${action.steps || '--'} ${action.direction || ''}`;
             if (type === 'display_text') return `display "${action.text || ''}"`;
             if (type === 'camera_capture') return 'camera capture';
+            if (type === 'remember') return `remember ${action.memory_type || action.kind || 'lesson'}: ${truncate(action.text || '', 42)}`;
             if (type === 'stop_all' || type === 'stop') return 'stop all';
             return type;
         }

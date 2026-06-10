@@ -4,6 +4,7 @@ from ai_loop import AILoopController, AILoopError
 from base64 import b64encode
 from camera_controller import CameraController, CameraControllerError
 from display_controller import DisplayController, DisplayControllerError
+from memory_store import MemoryStore, MemoryStoreError
 from motor import DCMotor, StepperMotor
 from motor_manager import MotorManager
 from ollama_client import OllamaClient, OllamaClientError
@@ -26,6 +27,7 @@ def create_api(
     camera_controller: CameraController | None = None,
     safety_supervisor: SafetySupervisor | None = None,
     ollama_client: OllamaClient | None = None,
+    memory_store: MemoryStore | None = None,
     ai_loop_config: dict | None = None,
     ai_loop_controller: AILoopController | None = None,
 ) -> Flask:
@@ -43,13 +45,18 @@ def create_api(
         display_controller = DisplayController(enabled=False)
     if camera_controller is None:
         camera_controller = CameraController(enabled=False)
+    if memory_store is None:
+        memory_store = MemoryStore(enabled=False)
     if safety_supervisor is None:
         safety_supervisor = SafetySupervisor(
             robot_state=robot_state,
             action_executor=action_executor,
             display_controller=display_controller,
             camera_controller=camera_controller,
+            memory_store=memory_store,
         )
+    elif safety_supervisor.memory_store is None:
+        safety_supervisor.memory_store = memory_store
     if ollama_client is None:
         ollama_client = OllamaClient(enabled=False, robot_state=robot_state)
     api_log("Creating Flask API application")
@@ -73,6 +80,10 @@ def create_api(
             motor_states=motor_manager.list_motors(),
             action_status=action_executor.get_status(),
         )
+        memory_query = snapshot["robot"].get("operator_goal", "")
+        relevant_memory = memory_store.relevant_memories(memory_query)
+        snapshot["memory"]["persistent_memories"] = relevant_memory["memories"]
+        snapshot["memory"]["memory_store"] = memory_store.get_status()
         snapshot["robot"]["display"] = display_controller.get_status()
         snapshot["robot"]["camera"] = camera_controller.get_status()
         snapshot["robot"]["safety"] = safety_supervisor.get_status()
@@ -163,6 +174,89 @@ def create_api(
         """Get compact robot state status."""
         api_log("GET /robot/status - Getting robot status")
         return jsonify(robot_state.get_status())
+
+    @app.route("/memory/status", methods=["GET"])
+    def get_memory_status():
+        """Get persistent memory store status."""
+        api_log("GET /memory/status - Getting memory status")
+        return jsonify(memory_store.get_status())
+
+    @app.route("/memory", methods=["GET"])
+    def list_memory():
+        """List persistent memories."""
+        api_log("GET /memory - Listing memories")
+        try:
+            return jsonify(
+                memory_store.list_memories(
+                    limit=request.args.get("limit", 50),
+                    query=request.args.get("q", ""),
+                    memory_type=request.args.get("type"),
+                    include_archived=request.args.get("include_archived", "false").lower()
+                    in {"1", "true", "yes"},
+                )
+            )
+        except MemoryStoreError as e:
+            api_log(f"Memory list error: {e}")
+            return jsonify({"error": str(e), "memory": memory_store.get_status()}), 400
+
+    @app.route("/memory/relevant", methods=["GET"])
+    def relevant_memory():
+        """Get memories relevant to a query or current goal."""
+        api_log("GET /memory/relevant - Getting relevant memories")
+        try:
+            query = request.args.get("q")
+            if query is None:
+                query = robot_state.get_status().get("goal", "")
+            return jsonify(
+                memory_store.relevant_memories(
+                    query=query,
+                    limit=request.args.get("limit", memory_store.prompt_limit),
+                )
+            )
+        except MemoryStoreError as e:
+            api_log(f"Memory relevance error: {e}")
+            return jsonify({"error": str(e), "memory": memory_store.get_status()}), 400
+
+    @app.route("/memory", methods=["POST"])
+    def add_memory():
+        """Add a persistent operator memory."""
+        api_log(f"POST /memory - Request body: {request.get_json(silent=True)}")
+        try:
+            data = get_json_body()
+            return jsonify(
+                memory_store.add(
+                    text=data.get("text", ""),
+                    memory_type=data.get("memory_type", data.get("type", "note")),
+                    source=data.get("source", "operator"),
+                    tags=data.get("tags", []),
+                    confidence=data.get("confidence", 1.0),
+                    metadata=data.get("metadata", {}),
+                )
+            )
+        except (ActionExecutorError, MemoryStoreError) as e:
+            api_log(f"Memory add error: {e}")
+            return jsonify({"error": str(e), "memory": memory_store.get_status()}), 400
+
+    @app.route("/memory/<int:memory_id>/archive", methods=["POST"])
+    def archive_memory(memory_id: int):
+        """Archive or unarchive one persistent memory."""
+        api_log(f"POST /memory/{memory_id}/archive - Request body: {request.get_json(silent=True)}")
+        try:
+            data = get_json_body()
+            return jsonify(memory_store.archive(memory_id, bool(data.get("archived", True))))
+        except (ActionExecutorError, MemoryStoreError) as e:
+            api_log(f"Memory archive error: {e}")
+            return jsonify({"error": str(e), "memory": memory_store.get_status()}), 400
+
+    @app.route("/memory/<int:memory_id>", methods=["DELETE"])
+    def delete_memory(memory_id: int):
+        """Delete one persistent memory."""
+        api_log(f"DELETE /memory/{memory_id}")
+        try:
+            return jsonify(memory_store.delete(memory_id))
+        except MemoryStoreError as e:
+            api_log(f"Memory delete error: {e}")
+            return jsonify({"error": str(e), "memory": memory_store.get_status()}), 400
 
     @app.route("/robot/goal", methods=["POST"])
     def set_robot_goal():

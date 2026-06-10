@@ -22,6 +22,7 @@ AVAILABLE_ACTIONS = [
     "display_text",
     "display_frame",
     "camera_capture",
+    "remember",
 ]
 
 ACTION_REFERENCE = {
@@ -75,6 +76,17 @@ ACTION_REFERENCE = {
         "movement": "none",
         "schema": {"type": "camera_capture"},
     },
+    "remember": {
+        "purpose": "Store a durable lesson, fact, preference, warning, calibration note, or scene note for future decisions.",
+        "movement": "none",
+        "schema": {
+            "type": "remember",
+            "memory_type": "lesson, fact, preference, warning, calibration, scene, or note",
+            "text": "short durable memory text",
+            "tags": ["short", "keywords"],
+            "confidence": "number from 0 to 1",
+        },
+    },
 }
 
 SYSTEM_PROMPT = """You are the decision layer for a physical robot chassis.
@@ -84,6 +96,8 @@ All movement must be bounded and intentional.
 Use movement_profile for practical chassis powers and durations. Avoid tiny pulses that will not overcome motor deadzone.
 Do not require extra sensors to move when the camera, robot state, and operator goal are sufficient.
 If the scene or goal is unsafe, blocked, or ambiguous, stop or wait by returning no movement actions.
+Use persistent_memories as durable context from past runs. If you learn a durable useful fact or calibration, you may include one remember action.
+Do not remember temporary guesses, raw camera descriptions, or repeated facts already present in persistent_memories.
 Never invent sensors, motors, actions, or hardware limits.
 Use drive_tank or rotate for chassis movement. Never use stepper_move for navigation; stepper_move is arm-only.
 The robot runtime validates every action before execution.
@@ -101,6 +115,7 @@ Mention only actions that can be represented by available_actions.
 Use drive_tank or rotate for chassis movement. Never use stepper_move for navigation; stepper_move is arm-only.
 If the goal is to move toward a doorway or destination, describe chassis movement, not arm movement.
 For movement, specify bounded but effective chassis motion using movement_profile. Avoid ineffective tiny nudges.
+Use persistent_memories as durable context. If the current result teaches a reusable lesson, say it should be remembered.
 """
 
 TRANSLATOR_PROMPT = """You translate a robot intent into strict robot action JSON.
@@ -111,6 +126,7 @@ If the intent is ambiguous, unsafe, impossible, or says no physical action, retu
 Use drive_tank or rotate for chassis movement. Never use stepper_move for navigation; stepper_move is arm-only.
 If an intent says to move the robot toward a doorway using stepper movement, correct that hardware mistake by using chassis drive_tank or rotate actions instead of stepper_move.
 All movement must be bounded but effective. Use movement_profile values unless the intent clearly requires a smaller adjustment.
+Use remember only for stable facts, operator preferences, calibration lessons, or warnings that should persist across restarts.
 Return exactly this JSON shape:
 {"speech":"short status sentence","actions":[],"next_check_ms":500}
 """
@@ -1126,6 +1142,9 @@ class OllamaClient:
         recent_actions = memory.get("recent_actions", [])
         if not isinstance(recent_actions, list):
             recent_actions = []
+        persistent_memories = memory.get("persistent_memories", [])
+        if not isinstance(persistent_memories, list):
+            persistent_memories = []
 
         return {
             "status": robot_snapshot.get("status"),
@@ -1134,6 +1153,7 @@ class OllamaClient:
             "memory": {
                 "last_action": deepcopy(memory.get("last_action")),
                 "recent_actions": deepcopy(recent_actions[-5:]),
+                "persistent_memories": deepcopy(persistent_memories[:8]),
             },
             "timestamps": deepcopy(robot_snapshot.get("timestamps", {})),
         }

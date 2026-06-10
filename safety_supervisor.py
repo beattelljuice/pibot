@@ -5,12 +5,13 @@ from typing import Any, Dict, List, Optional
 from action_executor import ActionExecutor, ActionExecutorError
 from camera_controller import CameraController, CameraControllerError
 from display_controller import DisplayController, DisplayControllerError
+from memory_store import MemoryStore, MemoryStoreError
 from robot_state import RobotState
 
 
 MOVEMENT_ACTIONS = {"drive_tank", "rotate", "stepper_move"}
 STOP_ACTIONS = {"stop", "stop_all"}
-SAFE_ACTIONS = {"display_text", "display_frame", "camera_capture"}
+SAFE_ACTIONS = {"display_text", "display_frame", "camera_capture", "remember"}
 ALLOWED_ACTIONS = MOVEMENT_ACTIONS | STOP_ACTIONS | SAFE_ACTIONS
 
 
@@ -33,6 +34,7 @@ class SafetySupervisor:
         action_executor: ActionExecutor,
         display_controller: Optional[DisplayController] = None,
         camera_controller: Optional[CameraController] = None,
+        memory_store: Optional[MemoryStore] = None,
         manual_enforcement: bool = False,
         obstacle_enforcement: bool = False,
         max_drive_power: int = 100,
@@ -43,6 +45,7 @@ class SafetySupervisor:
         self.action_executor = action_executor
         self.display_controller = display_controller or DisplayController(enabled=False)
         self.camera_controller = camera_controller or CameraController(enabled=False)
+        self.memory_store = memory_store
         self.manual_enforcement = bool(manual_enforcement)
         self.obstacle_enforcement = bool(obstacle_enforcement)
         self.max_drive_power = max(1, min(100, int(max_drive_power)))
@@ -184,6 +187,7 @@ class SafetySupervisor:
             ActionExecutorError,
             DisplayControllerError,
             CameraControllerError,
+            MemoryStoreError,
             SafetySupervisorError,
         ) as e:
             return self._decision(
@@ -283,6 +287,31 @@ class SafetySupervisor:
                 "action": {"type": "camera_capture"},
             }
 
+        if action_type == "remember":
+            tags = action.get("tags", [])
+            if isinstance(tags, str):
+                tags = [tag.strip() for tag in tags.split(",")]
+            if not isinstance(tags, list):
+                return {"decision": "rejected", "reason": "tags must be a list or string"}
+            confidence = action.get("confidence", 0.8)
+            if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+                return {"decision": "rejected", "reason": "confidence must be a number"}
+            metadata = action.get("metadata", {})
+            if not isinstance(metadata, dict):
+                return {"decision": "rejected", "reason": "metadata must be a JSON object"}
+            return {
+                "decision": "ok",
+                "clamped": False,
+                "action": {
+                    "type": "remember",
+                    "text": str(action.get("text", "")),
+                    "memory_type": str(action.get("memory_type", action.get("kind", "lesson"))),
+                    "tags": tags,
+                    "confidence": confidence,
+                    "metadata": metadata,
+                },
+            }
+
         return {"decision": "rejected", "reason": f"unsupported action '{action_type}'"}
 
     def _execute_action(self, action: Dict[str, Any], source: str) -> Dict[str, Any]:
@@ -329,6 +358,17 @@ class SafetySupervisor:
                 "frame": {**meta, "encoding": "jpeg", "bytes": len(jpeg_bytes)},
                 "camera": self.camera_controller.get_status(),
             }
+        if action_type == "remember":
+            if self.memory_store is None:
+                raise SafetySupervisorError("memory store is not configured")
+            return self.memory_store.add(
+                text=action["text"],
+                memory_type=action["memory_type"],
+                source=source,
+                tags=action["tags"],
+                confidence=action["confidence"],
+                metadata=action["metadata"],
+            )
         raise SafetySupervisorError(f"cannot execute action '{action_type}'")
 
     def _record_camera_sensor(self, meta: Dict[str, Any]) -> None:

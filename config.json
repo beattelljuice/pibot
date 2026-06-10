@@ -84,5 +84,12 @@
     "set_ai_mode_on_start": true,
     "stop_on_error": true,
     "max_consecutive_errors": 5
+  },
+  "memory": {
+    "enabled": true,
+    "path": "data/memory.json",
+    "max_memories": 500,
+    "prompt_limit": 8,
+    "max_text_chars": 500
   }
 }
