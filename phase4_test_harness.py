@@ -33,7 +33,7 @@ def make_snapshot():
     }
 
 
-def make_client(contents, capture=None, two_stage=True):
+def make_client(contents, capture=None, two_stage=True, expression_layer=False):
     if isinstance(contents, list):
         response_contents = list(contents)
     else:
@@ -57,8 +57,12 @@ def make_client(contents, capture=None, two_stage=True):
         model="planner-test-model",
         two_stage=two_stage,
         translator_model="translator-test-model",
+        expression_model="expression-test-model",
+        expression_layer=expression_layer,
         timeout_ms=1200,
         translator_timeout_ms=800,
+        expression_timeout_ms=700,
+        persona="PiBot speaks as a direct, present robot in its own chassis.",
         request_log_enabled=False,
         transport=transport,
     )
@@ -214,6 +218,74 @@ def test_payload_includes_movement_profile():
     assert user_payload["action_reference"]["rotate"]["example"]["duration_ms"] == 650
 
 
+def test_expression_payload_includes_persona_and_brief():
+    client = OllamaClient(
+        enabled=True,
+        model="planner-test-model",
+        translator_model="translator-test-model",
+        expression_model="expression-test-model",
+        expression_layer=True,
+        persona="PiBot is blunt and concrete.",
+        request_log_enabled=False,
+    )
+    model_snapshot = client._build_model_snapshot(make_snapshot())
+    payload = client.build_expression_payload(
+        "Say the intent on the OLED without moving.",
+        "show your intent",
+        model_snapshot,
+    )
+    user_payload = json.loads(payload["messages"][1]["content"])
+    assert payload["model"] == "expression-test-model"
+    assert "format" not in payload
+    assert "expression and embodiment layer" in payload["messages"][0]["content"]
+    assert user_payload["planner_intent"] == "Say the intent on the OLED without moving."
+    assert user_payload["persona"] == "PiBot is blunt and concrete."
+    assert user_payload["robot_snapshot"] == model_snapshot
+
+
+def test_expression_layer_runs_between_planner_and_translator():
+    capture = {}
+    client = make_client(
+        [
+            "Say that the doorway is ahead on the OLED, then hold position.",
+            "Speech: Doorway ahead.\nOLED text: DOOR AHEAD\nPhysical action: none.\nNext check: 500 ms.",
+            '{"speech":"Doorway ahead.","actions":[{"type":"display_text","text":"DOOR AHEAD","x":0,"y":0,"clear":true}],"next_check_ms":500}',
+        ],
+        capture=capture,
+        expression_layer=True,
+    )
+    result = client.decide(make_snapshot(), operator_goal="show what you see")
+    assert result["mode"] == "three_stage"
+    assert result["intent"] == "Say that the doorway is ahead on the OLED, then hold position."
+    assert "OLED text: DOOR AHEAD" in result["expressed_intent"]
+    assert result["proposal"]["actions"][0]["text"] == "DOOR AHEAD"
+    assert len(capture["calls"]) == 3
+    assert capture["calls"][0]["payload"]["model"] == "planner-test-model"
+    assert capture["calls"][1]["payload"]["model"] == "expression-test-model"
+    assert "format" not in capture["calls"][1]["payload"]
+    assert capture["calls"][1]["timeout_seconds"] == 0.7
+    assert capture["calls"][2]["payload"]["model"] == "translator-test-model"
+    assert capture["calls"][2]["payload"]["format"] == "json"
+
+
+def test_placeholder_oled_text_repaired_from_expression():
+    client = make_client(
+        [
+            "Say your intent on the OLED and do not move.",
+            "Speech: I am checking memory.\nOLED text: CHECKING MEMORY\nPhysical action: none.\nNext check: 500 ms.",
+            '{"speech":"I am checking memory.","actions":[{"type":"display_text","message":"your intent"}],"next_check_ms":500}',
+        ],
+        expression_layer=True,
+    )
+    result = client.decide(make_snapshot(), operator_goal="say your intent on the OLED")
+    action = result["proposal"]["actions"][0]
+    assert action["text"] == "CHECKING MEMORY"
+    assert "message" not in action
+    assert action["x"] == 0
+    assert action["y"] == 0
+    assert action["clear"] is True
+
+
 def test_disabled_client_rejected():
     client = OllamaClient(
         enabled=False,
@@ -268,6 +340,37 @@ def test_retry_translation_uses_cached_intent_without_planner():
     assert retry["proposal"]["actions"][0]["text"] == "retry"
     assert len(capture["calls"]) == 3
     assert capture["calls"][2]["payload"]["model"] == "translator-test-model"
+
+
+def test_retry_translation_uses_cached_expression_without_planner():
+    capture = {}
+    client = make_client(
+        [
+            "Write a clear ready message on the OLED.",
+            "Speech: Ready.\nOLED text: READY\nPhysical action: none.\nNext check: 500 ms.",
+            '{"speech":"bad json","actions":',
+            '{"speech":"Ready.","actions":[{"type":"display_text","text":"READY"}],"next_check_ms":500}',
+        ],
+        capture=capture,
+        expression_layer=True,
+    )
+    try:
+        client.decide(make_snapshot())
+    except OllamaClientError:
+        pass
+    else:
+        raise AssertionError("bad first translation should be rejected")
+
+    retry = client.translate_last_intent()
+    assert retry["source"] == "retry"
+    assert retry["mode"] == "three_stage"
+    assert retry["intent"] == "Write a clear ready message on the OLED."
+    assert "OLED text: READY" in retry["expressed_intent"]
+    assert retry["proposal"]["actions"][0]["text"] == "READY"
+    assert len(capture["calls"]) == 4
+    assert capture["calls"][3]["payload"]["model"] == "translator-test-model"
+    retry_user_payload = json.loads(capture["calls"][3]["payload"]["messages"][1]["content"])
+    assert "OLED text: READY" in retry_user_payload["translation_brief"]
 
 
 def test_empty_translation_gets_drive_fallback_from_intent():
@@ -428,9 +531,13 @@ TESTS = [
     test_model_snapshot_omits_internal_ollama_status,
     test_action_reference_marks_steppers_as_arm_only,
     test_payload_includes_movement_profile,
+    test_expression_payload_includes_persona_and_brief,
+    test_expression_layer_runs_between_planner_and_translator,
+    test_placeholder_oled_text_repaired_from_expression,
     test_disabled_client_rejected,
     test_robot_state_records_success,
     test_retry_translation_uses_cached_intent_without_planner,
+    test_retry_translation_uses_cached_expression_without_planner,
     test_empty_translation_gets_drive_fallback_from_intent,
     test_empty_translation_gets_rotate_fallback_from_intent,
     test_empty_translation_respects_no_action_intent,

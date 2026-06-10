@@ -97,6 +97,10 @@ Configure Ollama in `config.json`:
   "two_stage": true,
   "translator_model": "qwen2.5:0.5b",
   "translator_timeout_ms": 15000,
+  "expression_layer": true,
+  "expression_model": "cogito:3b",
+  "expression_timeout_ms": 60000,
+  "persona": "PiBot is direct, observant, and embodied. It speaks briefly as a robot inside the chassis, using concrete words instead of clinical labels.",
   "timeout_ms": 60000,
   "include_camera": false,
   "execute_actions": false,
@@ -127,7 +131,9 @@ curl -X POST http://localhost:5000/ollama/decide \
 
 Set `"execute": true` only when the robot is in `ai` mode and you want proposed actions routed through the safety supervisor. The config default leaves `execute_actions` false so you can inspect model output first.
 
-With `"two_stage": true`, `/ollama/decide` makes two model calls. The planner model reads the full robot state and optional image, then writes a plain-English intent. The translator model reads that intent and returns strict action JSON. If translation fails, call `/ollama/translate` to retry only the cheap JSON translation stage without rerunning the image/planning request.
+With `"two_stage": true`, `/ollama/decide` makes separate model calls. The planner model reads the full robot state and optional image, then writes a plain-English intent. If `"expression_layer": true`, a text-only expression model rewrites that intent into concrete speech/OLED wording using the configured persona. The translator model reads the expression brief and returns strict action JSON. If translation fails, call `/ollama/translate` to retry only the cheap JSON translation stage without rerunning the image/planning request.
+
+The expression layer is where non-clinical wording belongs. It is allowed to make speech and OLED text feel more like PiBot is present in the chassis, but it must not add new movement or increase movement power/duration. The runtime also repairs placeholder OLED text such as `"your intent"` by replacing it with concrete text from the expression brief before actions go to safety validation.
 
 The prompts and payload include an action reference. Chassis navigation uses `drive_tank` and `rotate`; `stepper_move` is marked as arm-only and should not be used to move toward a doorway or destination.
 
@@ -151,7 +157,7 @@ The configured `translator_model` must exist on the Ollama server. Install it on
 ollama pull qwen2.5:0.5b
 ```
 
-Every Ollama model request is logged as one JSON object per line in `logs/ollama_requests.jsonl`. Two-stage decisions create separate `ollama_planner` and `ollama_translator` entries. The log records request payload, raw model response, parsed proposal, timing, model, URL, intent, and errors. Camera image base64 is omitted by default and replaced with length plus SHA-256; set `"include_images": true` only if you explicitly want full image payloads written to disk.
+Every Ollama model request is logged as one JSON object per line in `logs/ollama_requests.jsonl`. Two-stage decisions create separate `ollama_planner` and `ollama_translator` entries, and expression-enabled decisions also create an `ollama_expression` entry. The log records request payload, raw model response, parsed proposal, timing, model, URL, intent, and errors. Camera image base64 is omitted by default and replaced with length plus SHA-256; set `"include_images": true` only if you explicitly want full image payloads written to disk.
 
 `Decide + Execute` requires a non-empty operator goal. This avoids sending the model an empty task and then executing a no-op or ambiguous action proposal.
 

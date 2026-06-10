@@ -96,6 +96,13 @@ class Config:
                 "two_stage": True,
                 "translator_model": "qwen2.5:0.5b",
                 "translator_timeout_ms": 15000,
+                "expression_layer": False,
+                "expression_model": None,
+                "expression_timeout_ms": None,
+                "persona": (
+                    "PiBot is direct, observant, and embodied. It speaks briefly as a "
+                    "robot inside the chassis, using concrete words instead of clinical labels."
+                ),
                 "timeout_ms": 1500,
                 "include_camera": False,
                 "execute_actions": False,

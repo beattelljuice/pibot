@@ -864,6 +864,7 @@
                 ['Goal', robot.operator_goal || '--'],
                 ['Ollama', ollama.enabled ? `${ollama.model || '--'} at ${ollama.url || '--'}` : 'disabled'],
                 ['Translator', ollama.two_stage ? `${ollama.translator_model || '--'} (${ollama.translator_timeout_ms ?? '--'} ms timeout)` : 'single-stage'],
+                ['Expression', ollama.expression_layer ? `${ollama.expression_model || '--'} (${ollama.expression_timeout_ms ?? '--'} ms timeout)` : 'disabled'],
                 ['AI movement', `drive ${movementProfile.default_drive_power ?? '--'}% for ${movementProfile.default_drive_ms ?? '--'} ms, rotate ${movementProfile.default_rotate_power ?? '--'}% for ${movementProfile.default_rotate_ms ?? '--'} ms`],
                 ['Memory', memoryStatus.enabled ? `${memoryStatus.count ?? 0} active, ${memoryStatus.archived_count ?? 0} archived at ${memoryStatus.path || '--'}` : 'disabled'],
                 ['Request log', requestLog.enabled ? requestLog.path || 'enabled' : 'disabled'],
@@ -952,12 +953,15 @@
             const proposal = decision.proposal || {};
             const actions = Array.isArray(proposal.actions) ? proposal.actions : [];
             const intent = decision.intent || (decision.planning && decision.planning.intent) || '';
+            const expressedIntent = decision.expressed_intent || (decision.expression && decision.expression.expressed_intent) || '';
             const fallback = decision.fallback_action;
+            const expressionMeta = decision.expression_model ? ` | expression ${escapeHtml(decision.expression_model)}` : '';
             return `
                 <div class="summary-item">
                     <div class="summary-title">${escapeHtml(decision.mode || 'Decision')} ${decision.source ? `<span class="pill">${escapeHtml(decision.source)}</span>` : ''}</div>
-                    <div class="summary-meta">${escapeHtml(decision.duration_ms ?? '--')} ms | planner ${escapeHtml(decision.planner_model || decision.model || '--')} | translator ${escapeHtml(decision.translator_model || '--')}</div>
+                    <div class="summary-meta">${escapeHtml(decision.duration_ms ?? '--')} ms | planner ${escapeHtml(decision.planner_model || decision.model || '--')}${expressionMeta} | translator ${escapeHtml(decision.translator_model || '--')}</div>
                     ${intent ? `<div class="summary-text"><strong>Intent:</strong> ${escapeHtml(intent)}</div>` : ''}
+                    ${expressedIntent && expressedIntent !== intent ? `<div class="summary-text"><strong>Expression:</strong> ${escapeHtml(expressedIntent)}</div>` : ''}
                     ${proposal.speech ? `<div class="summary-text"><strong>Speech:</strong> ${escapeHtml(proposal.speech)}</div>` : ''}
                     ${fallback ? `<div class="pill-list"><span class="pill warn">Fallback action applied</span></div>` : ''}
                     ${renderActionPills(actions)}

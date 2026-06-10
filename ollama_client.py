@@ -129,10 +129,28 @@ For movement, specify bounded but effective chassis motion using movement_profil
 Use persistent_memories as durable context. If the current result teaches a reusable lesson, say it should be remembered.
 """
 
+EXPRESSION_PROMPT = """You are the expression and embodiment layer for a physical robot named PiBot.
+You receive the planner's intent and turn it into a concrete, personable action brief for a JSON translator.
+Do not return JSON.
+Do not invent sensors, motors, actions, or hardware limits.
+Do not add movement that the planner did not request.
+Do not increase movement power, duration, or step counts.
+Resolve placeholders into literal robot-facing words. Never output placeholder text like "your intent", "intent", "status", or "message" as OLED text.
+If OLED output is requested, choose a short concrete message that fits a 128x64 display.
+Use persistent_memories and persona to make speech/OLED text feel like the robot is present in the chassis.
+Keep the brief concise and use these labels when relevant:
+Speech:
+OLED text:
+Physical action:
+Memory:
+Next check:
+"""
+
 TRANSLATOR_PROMPT = """You translate a robot intent into strict robot action JSON.
 You must only return valid JSON.
 You may only use the actions listed in available_actions.
 Do not invent sensors, motors, actions, or hardware limits.
+Translate the concrete expression brief, not placeholder wording.
 If the intent is ambiguous, unsafe, impossible, or says no physical action, return an empty actions list.
 If the goal or intent asks for analysis, reporting, memory lookup, or a recommendation and says not to move, put the answer in speech and return an empty actions list.
 Use stop_all only when an active action must be stopped or the operator explicitly asks to stop all motion.
@@ -170,6 +188,10 @@ class OllamaClient:
         two_stage: bool = True,
         translator_model: Optional[str] = None,
         translator_timeout_ms: Optional[int] = None,
+        expression_layer: bool = False,
+        expression_model: Optional[str] = None,
+        expression_timeout_ms: Optional[int] = None,
+        persona: Optional[str] = None,
         timeout_ms: int = 1500,
         include_camera: bool = False,
         execute_actions: bool = False,
@@ -188,6 +210,23 @@ class OllamaClient:
         self.translator_timeout_ms = max(
             1,
             int(translator_timeout_ms if translator_timeout_ms is not None else timeout_ms),
+        )
+        self.expression_layer = bool(expression_layer)
+        self.expression_model = str(expression_model or self.translator_model or self.model)
+        self.expression_timeout_ms = max(
+            1,
+            int(
+                expression_timeout_ms
+                if expression_timeout_ms is not None
+                else self.translator_timeout_ms
+            ),
+        )
+        self.persona = str(
+            persona
+            or (
+                "PiBot is direct, observant, and embodied. It speaks briefly as a robot "
+                "inside the chassis, using plain concrete words instead of clinical labels."
+            )
         )
         self.timeout_ms = max(1, int(timeout_ms))
         self.include_camera = bool(include_camera)
@@ -212,6 +251,7 @@ class OllamaClient:
             "Initialized "
             f"enabled={self.enabled} url={self.url} model={self.model} "
             f"two_stage={self.two_stage} translator_model={self.translator_model} "
+            f"expression_layer={self.expression_layer} expression_model={self.expression_model} "
             f"timeout_ms={self.timeout_ms} log_path={self.request_log_path}"
         )
 
@@ -225,8 +265,12 @@ class OllamaClient:
             "two_stage": self.two_stage,
             "planner_model": self.model,
             "translator_model": self.translator_model,
+            "expression_layer": self.expression_layer,
+            "expression_model": self.expression_model,
             "timeout_ms": self.timeout_ms,
             "translator_timeout_ms": self.translator_timeout_ms,
+            "expression_timeout_ms": self.expression_timeout_ms,
+            "persona": self.persona,
             "include_camera": self.include_camera,
             "execute_actions": self.execute_actions,
             "request_log": {
@@ -355,6 +399,7 @@ class OllamaClient:
             "action_reference": self._action_reference(),
             "movement_profile": deepcopy(self.movement_profile),
             "planner_intent": intent_text,
+            "translation_brief": intent_text,
             "robot_snapshot": model_snapshot,
             "output_schema": {
                 "speech": "string",
@@ -369,6 +414,51 @@ class OllamaClient:
             "format": "json",
             "messages": [
                 {"role": "system", "content": TRANSLATOR_PROMPT},
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        user_payload,
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ),
+                },
+            ],
+        }
+
+    def build_expression_payload(
+        self,
+        planner_intent: str,
+        operator_goal: str,
+        model_snapshot: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Build the expression-layer payload for concrete speech/OLED wording."""
+        if not isinstance(planner_intent, str) or not planner_intent.strip():
+            raise OllamaClientError("planner_intent must be a non-empty string", 400)
+        if not isinstance(operator_goal, str):
+            raise OllamaClientError("operator goal must be a string", 400)
+        if not isinstance(model_snapshot, dict):
+            raise OllamaClientError("model_snapshot must be a JSON object", 400)
+
+        user_payload = {
+            "operator_goal": operator_goal,
+            "planner_intent": planner_intent,
+            "persona": self.persona,
+            "available_actions": list(AVAILABLE_ACTIONS),
+            "action_reference": self._action_reference(),
+            "movement_profile": deepcopy(self.movement_profile),
+            "robot_snapshot": model_snapshot,
+            "instruction": (
+                "Rewrite the planner intent into a concrete, personable robot action "
+                "brief. Use literal OLED wording when an OLED action is requested. "
+                "Do not write JSON."
+            ),
+        }
+
+        return {
+            "model": self.expression_model,
+            "stream": False,
+            "messages": [
+                {"role": "system", "content": EXPRESSION_PROMPT},
                 {
                     "role": "user",
                     "content": json.dumps(
@@ -403,11 +493,13 @@ class OllamaClient:
 
         context = deepcopy(self._last_translation_context)
         return self._translate_intent(
-            intent_text=self._last_intent["intent"],
+            intent_text=context.get("translator_intent", self._last_intent["intent"]),
             operator_goal=context["operator_goal"],
             model_snapshot=context["model_snapshot"],
             start_total=time.monotonic(),
             planning_result=None,
+            expression_result=deepcopy(context.get("expression")),
+            planner_intent=context.get("planner_intent"),
             source="retry",
         )
 
@@ -600,14 +692,116 @@ class OllamaClient:
             )
             raise OllamaClientError(message) from e
 
+        translator_intent = intent_text
+        expression_result = None
+        if self.expression_layer:
+            expression_result = self._express_intent(
+                planner_intent=intent_text,
+                operator_goal=goal,
+                model_snapshot=model_snapshot,
+                start_total=start,
+            )
+            if expression_result["status"] == "success":
+                translator_intent = expression_result["expressed_intent"]
+
+        self._last_intent["translator_intent"] = translator_intent
+        self._last_intent["expression"] = deepcopy(expression_result)
+        self._last_translation_context = {
+            "operator_goal": goal,
+            "model_snapshot": deepcopy(model_snapshot),
+            "planner_intent": intent_text,
+            "translator_intent": translator_intent,
+            "expression": deepcopy(expression_result),
+        }
+
         return self._translate_intent(
-            intent_text=intent_text,
+            intent_text=translator_intent,
             operator_goal=goal,
             model_snapshot=model_snapshot,
             start_total=start,
             planning_result=planning_result,
+            expression_result=expression_result,
+            planner_intent=intent_text,
             source="fresh",
         )
+
+    def _express_intent(
+        self,
+        planner_intent: str,
+        operator_goal: str,
+        model_snapshot: Dict[str, Any],
+        start_total: float,
+    ) -> Dict[str, Any]:
+        payload = self.build_expression_payload(
+            planner_intent,
+            operator_goal,
+            model_snapshot,
+        )
+        timeout_seconds = self.expression_timeout_ms / 1000.0
+        request_at = self._now()
+        response = None
+        start = time.monotonic()
+
+        try:
+            response = (
+                self.transport(payload, timeout_seconds)
+                if self.transport is not None
+                else self._post_chat(payload, timeout_seconds, self.expression_timeout_ms)
+            )
+            duration_ms = int((time.monotonic() - start) * 1000)
+            expressed_intent = self._extract_content(response).strip()
+            if not expressed_intent:
+                raise OllamaClientError("Ollama expression layer returned empty brief", 502)
+            response_at = self._now()
+            result = {
+                "status": "success",
+                "model": self.expression_model,
+                "duration_ms": duration_ms,
+                "planner_intent": planner_intent,
+                "expressed_intent": expressed_intent,
+                "raw": response,
+            }
+            self._write_request_log(
+                event="ollama_expression",
+                stage="expression",
+                model=self.expression_model,
+                request_at=request_at,
+                response_at=response_at,
+                duration_ms=duration_ms,
+                payload=payload,
+                response=response,
+                proposal=None,
+                intent=expressed_intent,
+                error=None,
+            )
+            return result
+        except Exception as e:
+            message = f"Ollama expression failed: {e}"
+            duration_ms = int((time.monotonic() - start) * 1000)
+            response_at = self._now()
+            self._write_request_log(
+                event="ollama_expression",
+                stage="expression",
+                model=self.expression_model,
+                request_at=request_at,
+                response_at=response_at,
+                duration_ms=duration_ms,
+                payload=payload,
+                response=response,
+                proposal=None,
+                intent=planner_intent,
+                error=message,
+            )
+            ollama_log(f"{message}; falling back to planner intent")
+            return {
+                "status": "error",
+                "model": self.expression_model,
+                "duration_ms": duration_ms,
+                "planner_intent": planner_intent,
+                "expressed_intent": planner_intent,
+                "error": message,
+                "raw": response,
+            }
 
     def _translate_intent(
         self,
@@ -616,7 +810,9 @@ class OllamaClient:
         model_snapshot: Dict[str, Any],
         start_total: float,
         planning_result: Optional[Dict[str, Any]],
-        source: str,
+        expression_result: Optional[Dict[str, Any]] = None,
+        planner_intent: Optional[str] = None,
+        source: str = "fresh",
     ) -> Dict[str, Any]:
         payload = self.build_translator_payload(intent_text, operator_goal, model_snapshot)
         timeout_seconds = self.translator_timeout_ms / 1000.0
@@ -649,8 +845,15 @@ class OllamaClient:
                 proposal["actions"] = [fallback_action]
                 if not proposal["speech"].strip():
                     proposal["speech"] = self._speech_for_fallback(fallback_action)
+            proposal = self._repair_placeholder_display_text(proposal, intent_text)
             response_at = self._now()
             total_duration_ms = int((time.monotonic() - start_total) * 1000)
+            decision_mode = (
+                "three_stage"
+                if expression_result and expression_result.get("status") == "success"
+                else "two_stage"
+            )
+            display_intent = planner_intent or intent_text
             self._last_response_at = response_at
             self._last_duration_ms = total_duration_ms
             self._last_proposal = deepcopy(proposal)
@@ -658,9 +861,12 @@ class OllamaClient:
             if self.robot_state:
                 self.robot_state.record_ai_response(
                     {
-                        "intent": intent_text,
+                        "intent": display_intent,
+                        "expressed_intent": (
+                            intent_text if decision_mode == "three_stage" else None
+                        ),
                         "proposal": proposal,
-                        "mode": "two_stage",
+                        "mode": decision_mode,
                     }
                 )
             self._write_request_log(
@@ -679,16 +885,19 @@ class OllamaClient:
             )
             return {
                 "status": "success",
-                "mode": "two_stage",
+                "mode": decision_mode,
                 "source": source,
                 "model": self.model,
                 "planner_model": self.model,
+                "expression_model": self.expression_model if self.expression_layer else None,
                 "translator_model": self.translator_model,
                 "duration_ms": total_duration_ms,
-                "intent": intent_text,
+                "intent": display_intent,
+                "expressed_intent": intent_text if decision_mode == "three_stage" else None,
                 "proposal": proposal,
                 "fallback_action": deepcopy(fallback_action),
                 "planning": planning_result,
+                "expression": deepcopy(expression_result),
                 "translation": {
                     "status": "success",
                     "model": self.translator_model,
@@ -1132,6 +1341,79 @@ class OllamaClient:
                 best_score = score
                 best_text = text
         return best_text[:220] if best_text else None
+
+    def _repair_placeholder_display_text(
+        self,
+        proposal: Dict[str, Any],
+        intent_text: str,
+    ) -> Dict[str, Any]:
+        actions = proposal.get("actions", [])
+        if not isinstance(actions, list):
+            return proposal
+
+        replacement = None
+        cleaned = deepcopy(proposal)
+        for action in cleaned.get("actions", []):
+            if not isinstance(action, dict) or action.get("type") != "display_text":
+                continue
+            text = str(action.get("text", action.get("message", ""))).strip()
+            if not self._is_placeholder_display_text(text):
+                continue
+            if replacement is None:
+                replacement = (
+                    self._extract_oled_text_from_brief(intent_text)
+                    or self._short_oled_text(cleaned.get("speech", ""))
+                    or self._short_oled_text(intent_text)
+                    or "READY"
+                )
+            action["text"] = replacement
+            for alias in ("message", "content", "value", "line"):
+                if alias in action and self._is_placeholder_display_text(str(action[alias])):
+                    action.pop(alias, None)
+            action.setdefault("x", 0)
+            action.setdefault("y", 0)
+            action.setdefault("clear", True)
+        return cleaned
+
+    def _is_placeholder_display_text(self, text: str) -> bool:
+        normalized = re.sub(r"[^a-z0-9{}]+", " ", text.lower()).strip()
+        placeholders = {
+            "",
+            "intent",
+            "your intent",
+            "my intent",
+            "current intent",
+            "your current intent",
+            "my current intent",
+            "the intent",
+            "status",
+            "message",
+            "oled text",
+            "display text",
+            "{intent}",
+            "{{intent}}",
+        }
+        return normalized in placeholders or "your intent" in normalized
+
+    def _extract_oled_text_from_brief(self, brief: str) -> Optional[str]:
+        for pattern in [
+            r"(?im)^\s*OLED\s+text\s*:\s*(.+?)\s*$",
+            r"(?im)^\s*Display\s+text\s*:\s*(.+?)\s*$",
+        ]:
+            match = re.search(pattern, brief or "")
+            if not match:
+                continue
+            candidate = match.group(1).strip().strip("\"'")
+            if candidate and candidate.lower() not in {"none", "no", "n/a"}:
+                return self._short_oled_text(candidate)
+        return None
+
+    def _short_oled_text(self, text: str) -> Optional[str]:
+        text = re.sub(r"\s+", " ", str(text or "")).strip()
+        if not text:
+            return None
+        text = re.sub(r"(?i)^(speech|oled text|physical action|memory|next check)\s*:\s*", "", text)
+        return text[:80]
 
     def _extract_display_text(self, intent_text: str, operator_goal: str) -> Optional[str]:
         text = f"{intent_text} {operator_goal}"
